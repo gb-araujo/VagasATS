@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>IA Vagas Autofill</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h2>IA Vagas Autofill 🚀</h2>
+    <p>Carregue o backup do seu perfil (.json) gerado no IA Vagas para preencher formulários automaticamente.</p>
+    
+    <div class="card">
+      <h3 id="status-text">Nenhum perfil carregado.</h3>
+      <input type="file" id="file-input" accept=".json" />
+    </div>
+
+    <button id="autofill-btn">Preencher Formulário na Página Atual</button>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
