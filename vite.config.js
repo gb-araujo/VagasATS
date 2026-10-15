@@ -45,7 +45,7 @@ function extractJobFromHtml(html, url = '') {
         }
         break;
       }
-    } catch(e) {}
+    } catch (e) { }
   }
 
   // 2. OpenGraph Meta Tags
@@ -139,7 +139,7 @@ function parseSlugMetadata(url = '', platform = '') {
 
     // Glassdoor: /job-listing/slug-JV_...htm ou /Job/...
     if (platform === 'Glassdoor' || pathname.includes('job-listing') || pathname.toLowerCase().includes('/job') || pathname.toLowerCase().includes('/vaga')) {
-      const match = pathname.match(/\/job-listing\/([^\/]+?)(?:-JV_|\.htm|$)/i) 
+      const match = pathname.match(/\/job-listing\/([^\/]+?)(?:-JV_|\.htm|$)/i)
         || pathname.match(/\/(?:Job|Vaga|vagas|vaga)\/([^\/]+?)(?:-SRCH_|-KO|\.htm|$)/i)
         || pathname.match(/\/([^\/]+?)(?:-JV_|\.htm|$)/i);
       if (match) {
@@ -216,7 +216,7 @@ function parseSlugMetadata(url = '', platform = '') {
         };
       }
     }
-  } catch(e) {}
+  } catch (e) { }
   return null;
 }
 
@@ -336,7 +336,7 @@ function jobAnalyzerPlugin() {
             }
             return res.end(JSON.stringify([]));
           }
-        } catch(e) {
+        } catch (e) {
           res.end(JSON.stringify([]));
         }
       });
@@ -393,7 +393,7 @@ function jobAnalyzerPlugin() {
           const parsedJobs = parseNerdinHtml(html);
           nerdinJobsCache.set(cacheKey, { timestamp: now, data: parsedJobs });
           return res.end(JSON.stringify(parsedJobs));
-        } catch(e) {
+        } catch (e) {
           res.end(JSON.stringify([]));
         }
       });
@@ -456,7 +456,7 @@ function jobAnalyzerPlugin() {
                 'Referer': 'https://www.google.com/'
               }
             });
-          } catch(e) {
+          } catch (e) {
             // Falha de rede ou DNS
           }
 

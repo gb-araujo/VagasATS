@@ -30,20 +30,20 @@ export default function JobDetailsModal({ job, userProfile, onClose, onGenerateR
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 overflow-y-auto animate-fade-in"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div className="glass-panel w-full max-w-3xl rounded-2xl border border-[var(--border-strong)] shadow-xl overflow-hidden my-8 max-h-[90vh] flex flex-col bg-[var(--bg-card)]">
-        
+
         {/* Modal Header */}
         <div className="p-6 border-b border-[var(--border-subtle)] flex items-start justify-between bg-[var(--bg-card)] relative">
           <div className="flex items-start gap-4">
-            <img 
-              src={job.companyLogo} 
-              alt={job.company} 
+            <img
+              src={job.companyLogo}
+              alt={job.company}
               className="w-14 h-14 rounded-xl object-cover border border-[var(--border-subtle)] bg-[var(--bg-subtle)]"
             />
             <div>
@@ -68,7 +68,7 @@ export default function JobDetailsModal({ job, userProfile, onClose, onGenerateR
             </div>
           </div>
 
-          <button 
+          <button
             onClick={onClose}
             className="p-2 rounded-xl bg-[var(--bg-subtle)] text-[var(--text-faint)] hover:text-[var(--text-main)] border border-[var(--border-subtle)] transition-all cursor-pointer"
           >
@@ -78,11 +78,11 @@ export default function JobDetailsModal({ job, userProfile, onClose, onGenerateR
 
         {/* Modal Content Scrollable */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
-          
+
           {/* AI Match Gauge Card */}
           <div className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] p-5 rounded-xl flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-5">
-              
+
               {/* Score Circular Metric */}
               <div className="relative w-20 h-20 flex items-center justify-center flex-shrink-0">
                 <svg className="w-full h-full transform -rotate-90">
@@ -138,7 +138,7 @@ export default function JobDetailsModal({ job, userProfile, onClose, onGenerateR
 
           {/* AI Analysis Grid: Strengths & Skill Gaps */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            
+
             {/* Strengths */}
             <div className="bg-[var(--bg-subtle)] border border-emerald-500/20 p-4 rounded-xl">
               <h4 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 mb-3">

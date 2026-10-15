@@ -150,7 +150,7 @@ export function saveCachedRealJobs(jobs) {
 export function clearCachedRealJobs() {
   try {
     localStorage.removeItem('ia_vagas_cached_real_jobs');
-  } catch (e) {}
+  } catch (e) { }
 }
 
 /**
@@ -163,7 +163,7 @@ export function loadAiSettings() {
     let legacyKey = '';
     try {
       legacyKey = localStorage.getItem('gemini_api_key') || '';
-    } catch (_) {}
+    } catch (_) { }
 
     if (saved) {
       const parsed = JSON.parse(saved);
@@ -305,13 +305,13 @@ export function loadTheme() {
   try {
     const saved = localStorage.getItem(STORAGE_KEYS.THEME);
     if (saved === 'light' || saved === 'dark') return saved;
-  } catch (e) {}
+  } catch (e) { }
   return 'dark'; // Dark mode por padrão
 }
 
 export function saveTheme(theme) {
   try {
     localStorage.setItem(STORAGE_KEYS.THEME, theme);
-  } catch (e) {}
+  } catch (e) { }
 }
 

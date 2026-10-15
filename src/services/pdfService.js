@@ -174,7 +174,7 @@ export function exportResumeToPDF(tailoredResume, templateStyle = 'modern') {
     tailoredResume.location,
     tailoredResume.linkedin
   ].filter(Boolean).map(sanitizePdfText).join("  |  ");
-  
+
   const contactLines = doc.splitTextToSize(contactText, pageWidth - (margin * 2));
   doc.text(contactLines, margin, y);
   y += (contactLines.length * 4) + 2.5;
@@ -195,12 +195,12 @@ export function exportResumeToPDF(tailoredResume, templateStyle = 'modern') {
     doc.setFontSize(11);
     doc.setTextColor(...primaryColor);
     doc.text(title.toUpperCase(), margin, y);
-    
+
     // Underline accent
     doc.setDrawColor(...primaryColor);
     doc.setLineWidth(0.6);
     doc.line(margin, y + 1.5, margin + 25, y + 1.5);
-    
+
     y += 7;
   }
 
@@ -246,7 +246,7 @@ export function exportResumeToPDF(tailoredResume, templateStyle = 'modern') {
 
   // 4. Work Experience Section
   addSectionHeader(isEn ? "Professional Experience" : "Experiencia Profissional");
-  
+
   (tailoredResume.experiences || []).forEach((exp) => {
     if (y > 255) {
       doc.addPage();
@@ -332,7 +332,7 @@ export function exportResumeToPDF(tailoredResume, templateStyle = 'modern') {
     doc.setFontSize(9.5);
     doc.setTextColor(...primaryColor);
     doc.text(isEn ? "LANGUAGES: " : "IDIOMAS: ", margin, y);
-    
+
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(...textColor);

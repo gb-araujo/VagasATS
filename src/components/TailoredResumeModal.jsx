@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  X, Download, Copy, Check, FileText, Mail, Sparkles, ShieldCheck, 
-  CheckCircle2, Link, ExternalLink, Key, RefreshCw, Edit3, Eye, 
+import {
+  X, Download, Copy, Check, FileText, Mail, Sparkles, ShieldCheck,
+  CheckCircle2, Link, ExternalLink, Key, RefreshCw, Edit3, Eye,
   AlertCircle, ChevronDown, ChevronUp, Bot, Award, Zap, Wifi, WifiOff,
   Plus, Trash2, RotateCcw, Scale, Code2, TrendingUp, Languages,
   Globe
 } from 'lucide-react';
-import { 
-  generateTailoredResume, 
-  generateTailoredResumeWithLLM, 
+import {
+  generateTailoredResume,
+  generateTailoredResumeWithLLM,
   generateCoverLetter,
   generateCoverLetterWithLLM,
   testGeminiConnection,
@@ -31,7 +31,7 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
   const [copied, setCopied] = useState(false);
   const [templateStyle, setTemplateStyle] = useState('modern');
   const [tone, setTone] = useState('balanced');
-  
+
   // Language auto-detection and manual toggle ('auto' | 'pt' | 'en')
   const [targetLanguage, setTargetLanguage] = useState(() => detectJobLanguage(job));
 
@@ -54,7 +54,7 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState(0);
   const [generationMessage, setGenerationMessage] = useState('');
-  
+
   // Inline edit mode & feedback
   const [isEditing, setIsEditing] = useState(false);
   const [editToast, setEditToast] = useState('');
@@ -91,8 +91,8 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
     setIsGenerating(true);
     setIsGeneratingCoverLetter(true);
     setGenerationStep(1);
-    setGenerationMessage(langToUse === 'en' 
-      ? `Analyzing requirements for ${cleanResumeTitle(job.title)} at ${cleanCompanyName(job.company)}...` 
+    setGenerationMessage(langToUse === 'en'
+      ? `Analyzing requirements for ${cleanResumeTitle(job.title)} at ${cleanCompanyName(job.company)}...`
       : `Analisando requisitos e desafios da vaga (${cleanResumeTitle(job.title)} na ${cleanCompanyName(job.company)})...`
     );
 
@@ -128,6 +128,14 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
         setInitialAiResume(result);
         if (result.isRealAI) {
           setConnectionStatus('connected');
+          setEditToast(`Currículo gerado com sucesso pelo modelo ${result.aiModel || 'Gemini Flash'}!`);
+          setTimeout(() => setEditToast(''), 4500);
+        } else {
+          setConnectionStatus('disconnected');
+          if (result.aiError) {
+            setEditToast(`Aviso: ${result.aiError}`);
+            setTimeout(() => setEditToast(''), 6000);
+          }
         }
       }
 
@@ -155,7 +163,8 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
     if (!job) return;
     setIsGeneratingCoverLetter(true);
     try {
-      const res = await generateCoverLetterWithLLM(userProfile, job, apiKey, targetLanguage, tone);
+      const effectiveKey = (apiKey || loadAiSettings()?.apiKey || '').trim();
+      const res = await generateCoverLetterWithLLM(userProfile, job, effectiveKey, targetLanguage, tone);
       if (res && res.text) {
         setCoverLetterText(res.text);
         setCoverLetterIsAI(res.isRealAI);
@@ -176,8 +185,9 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
     setResumeData(updated);
     setInitialAiResume(updated);
     setCoverLetterText(generateCoverLetter(userProfile, job, newLang));
-    if (apiKey) {
-      handleGenerateWithAI(tone, apiKey, newLang);
+    const effectiveKey = (apiKey || loadAiSettings()?.apiKey || '').trim();
+    if (effectiveKey) {
+      handleGenerateWithAI(tone, effectiveKey, newLang);
     }
   };
 
@@ -191,8 +201,10 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
     setInitialAiResume(base);
     setCoverLetterText(generateCoverLetter(userProfile, job, detectedLang));
 
-    if (apiKey) {
-      handleGenerateWithAI(tone, apiKey, detectedLang);
+    const effectiveKey = (apiKey || loadAiSettings()?.apiKey || '').trim();
+    if (effectiveKey) {
+      if (!apiKey) setApiKey(effectiveKey);
+      handleGenerateWithAI(tone, effectiveKey, detectedLang);
     }
   }, [job?.id, userProfile]);
 
@@ -205,7 +217,7 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
 
     // Testa a nova chave salva imediatamente
     await handleTestConnection(trimmed);
-    
+
     // E já reanalisa o currículo com a nova chave
     handleGenerateWithAI(tone, trimmed, targetLanguage);
   };
@@ -214,7 +226,10 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
 
   const handleToneChange = (newTone) => {
     setTone(newTone);
-    handleGenerateWithAI(newTone, apiKey, targetLanguage);
+    const effectiveKey = (apiKey || loadAiSettings()?.apiKey || '').trim();
+    if (effectiveKey) {
+      handleGenerateWithAI(newTone, effectiveKey, targetLanguage);
+    }
   };
 
   const handleDownloadPDF = () => {
@@ -379,14 +394,14 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 overflow-y-auto animate-fade-in"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div className="glass-panel w-full max-w-4xl rounded-2xl border border-[var(--border-strong)] shadow-xl overflow-hidden my-6 max-h-[92vh] flex flex-col bg-[var(--bg-card)]">
-        
+
         {/* Header */}
         <div className="p-6 border-b border-[var(--border-subtle)] bg-[var(--bg-card)] flex items-center justify-between flex-wrap gap-4">
           <div>
@@ -431,7 +446,7 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
                 </span>
               )}
             </div>
-            
+
             <h2 className="text-lg font-bold text-[var(--text-main)] mt-1">
               Currículo para: {cleanResumeTitle(job.title)} ({cleanCompanyName(job.company)})
             </h2>
@@ -442,40 +457,37 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
             <div className="flex bg-[var(--bg-subtle)] p-1 rounded-xl border border-[var(--border-subtle)]">
               <button
                 onClick={() => setActiveTab('resume')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  activeTab === 'resume'
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'resume'
                     ? 'bg-blue-600 text-white shadow'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                }`}
+                  }`}
               >
                 <FileText className="w-3.5 h-3.5" />
                 Currículo PDF
               </button>
               <button
                 onClick={() => setActiveTab('job_desc')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  activeTab === 'job_desc'
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'job_desc'
                     ? 'bg-blue-600 text-white shadow'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                }`}
+                  }`}
               >
                 <Eye className="w-3.5 h-3.5" />
                 Descrição da Vaga
               </button>
               <button
                 onClick={() => setActiveTab('cover')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  activeTab === 'cover'
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'cover'
                     ? 'bg-blue-600 text-white shadow'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                }`}
+                  }`}
               >
                 <Mail className="w-3.5 h-3.5" />
                 Carta
               </button>
             </div>
 
-            <button 
+            <button
               onClick={onClose}
               className="p-2 rounded-xl bg-[var(--bg-subtle)] text-[var(--text-faint)] hover:text-[var(--text-main)] border border-[var(--border-subtle)] transition-all cursor-pointer"
             >
@@ -497,16 +509,16 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
                 <p className="text-[var(--text-muted)] mt-1">
                   Insira sua chave do Google Gemini para raciocínio profundo e geração 100% personalizada em tempo real. A chave fica gravada no seu navegador.
                 </p>
-                <a 
-                  href="https://aistudio.google.com/app/apikey" 
-                  target="_blank" 
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 dark:text-cyan-400 hover:underline flex items-center gap-1 mt-1 font-semibold"
                 >
                   <ExternalLink className="w-3.5 h-3.5" /> Gerar chave grátis no Google AI Studio (aistudio.google.com)
                 </a>
               </div>
-              <button 
+              <button
                 onClick={() => setShowKeyDrawer(false)}
                 className="text-[var(--text-faint)] hover:text-[var(--text-main)] p-1 cursor-pointer"
               >
@@ -539,11 +551,10 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
             </div>
 
             {connectionFeedback && (
-              <div className={`p-2.5 rounded-xl border font-medium text-xs flex items-center gap-2 ${
-                connectionStatus === 'connected' 
-                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40' 
+              <div className={`p-2.5 rounded-xl border font-medium text-xs flex items-center gap-2 ${connectionStatus === 'connected'
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
                   : 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/40'
-              }`}>
+                }`}>
                 {connectionStatus === 'connected' ? (
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                 ) : (
@@ -571,17 +582,26 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
 
         {/* Content Body */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          
+
           {activeTab === 'resume' ? (
             <>
               {/* AI Controls Toolbar */}
               <div className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] p-4 rounded-xl space-y-3">
                 <div className="flex items-center justify-between flex-wrap gap-3">
-                  
+
                   {/* Regeneration, Language & Tone Controls */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
-                      onClick={() => handleGenerateWithAI(tone, apiKey, targetLanguage)}
+                      onClick={() => {
+                        const effectiveKey = (apiKey || loadAiSettings()?.apiKey || '').trim();
+                        if (!effectiveKey) {
+                          setShowKeyDrawer(true);
+                          setEditToast('Configure sua API Key do Google Gemini para reanalisar com IA.');
+                          setTimeout(() => setEditToast(''), 4500);
+                        } else {
+                          handleGenerateWithAI(tone, effectiveKey, targetLanguage);
+                        }
+                      }}
                       disabled={isGenerating}
                       className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer shadow-sm"
                     >
@@ -593,9 +613,8 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
                     <div className="flex bg-[var(--bg-card)] p-1 rounded-xl border border-[var(--border-subtle)] gap-1">
                       <button
                         onClick={() => handleLanguageChange('pt')}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                          targetLanguage === 'pt' ? 'bg-blue-600 text-white shadow' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                        }`}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${targetLanguage === 'pt' ? 'bg-blue-600 text-white shadow' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
+                          }`}
                         title="Gerar currículo estruturado em Português"
                       >
                         <Globe className="w-3 h-3 text-cyan-500" />
@@ -603,9 +622,8 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
                       </button>
                       <button
                         onClick={() => handleLanguageChange('en')}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                          targetLanguage === 'en' ? 'bg-blue-600 text-white shadow' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                        }`}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${targetLanguage === 'en' ? 'bg-blue-600 text-white shadow' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
+                          }`}
                         title="Gerar currículo 100% em Inglês para vagas internacionais/remotas"
                       >
                         <Globe className="w-3 h-3 text-emerald-500" />
@@ -617,33 +635,31 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
                     <button
                       onClick={() => handleTestConnection()}
                       disabled={isTestingConnection}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border shadow-sm cursor-pointer ${
-                        connectionStatus === 'connected'
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border shadow-sm cursor-pointer ${connectionStatus === 'connected'
                           ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25'
                           : connectionStatus === 'disconnected'
-                          ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/40 hover:bg-rose-500/25'
-                          : 'bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)] border-[var(--border-subtle)]'
-                      }`}
+                            ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/40 hover:bg-rose-500/25'
+                            : 'bg-[var(--bg-subtle)] text-[var(--text-muted)] hover:text-[var(--text-main)] border-[var(--border-subtle)]'
+                        }`}
                       title="Testa a comunicação em tempo real com o modelo do Google Gemini"
                     >
                       <Wifi className={`w-3.5 h-3.5 ${isTestingConnection ? 'animate-spin' : ''}`} />
                       <span>
-                        {isTestingConnection 
-                          ? 'Testando...' 
-                          : connectionStatus === 'connected' 
-                          ? <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> IA Conectada</span> 
-                          : connectionStatus === 'disconnected' 
-                          ? <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500"></span> Testar Conexão IA</span> 
-                          : 'Testar Conexão IA'}
+                        {isTestingConnection
+                          ? 'Testando...'
+                          : connectionStatus === 'connected'
+                            ? <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> IA Conectada</span>
+                            : connectionStatus === 'disconnected'
+                              ? <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500"></span> Testar Conexão IA</span>
+                              : 'Testar Conexão IA'}
                       </span>
                     </button>
 
                     <div className="flex bg-[var(--bg-card)] p-1 rounded-xl border border-[var(--border-subtle)] gap-1">
                       <button
                         onClick={() => handleToneChange('balanced')}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                          tone === 'balanced' ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                        }`}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${tone === 'balanced' ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
+                          }`}
                         title="Tom fluido equilibrando técnica e impacto"
                       >
                         <Scale className="w-3 h-3 text-blue-400" />
@@ -651,9 +667,8 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
                       </button>
                       <button
                         onClick={() => handleToneChange('tech')}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                          tone === 'tech' ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                        }`}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${tone === 'tech' ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
+                          }`}
                         title="Foco em ferramentas, linguagens e arquitetura"
                       >
                         <Code2 className="w-3 h-3 text-cyan-400" />
@@ -661,9 +676,8 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
                       </button>
                       <button
                         onClick={() => handleToneChange('impact')}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                          tone === 'impact' ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
-                        }`}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${tone === 'impact' ? 'bg-blue-600 text-white' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'
+                          }`}
                         title="Foco em resultados de negócio e otimizações"
                       >
                         <TrendingUp className="w-3 h-3 text-emerald-400" />
@@ -674,15 +688,14 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
 
                   {/* Edit Toggle & Key Settings */}
                   <div className="flex items-center gap-2">
-                    
+
                     {/* Botão de Edição de Destaque */}
                     <button
                       onClick={() => setIsEditing(!isEditing)}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 border shadow-md cursor-pointer ${
-                        isEditing 
-                          ? 'bg-amber-500 text-slate-950 border-amber-400 ring-2 ring-amber-400/50 shadow-amber-500/25' 
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 border shadow-md cursor-pointer ${isEditing
+                          ? 'bg-amber-500 text-slate-950 border-amber-400 ring-2 ring-amber-400/50 shadow-amber-500/25'
                           : 'bg-[var(--bg-subtle)] hover:bg-[var(--bg-card)] text-amber-700 dark:text-amber-300 border-amber-500/40'
-                      }`}
+                        }`}
                       title="Editar textos, habilidades e experiências antes de baixar o PDF"
                     >
                       {isEditing ? (
@@ -700,11 +713,10 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
 
                     <button
                       onClick={() => setShowKeyDrawer(!showKeyDrawer)}
-                      className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1 border cursor-pointer ${
-                        apiKey 
-                          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40' 
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1 border cursor-pointer ${apiKey
+                          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40'
                           : 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border-subtle)] hover:text-[var(--text-main)]'
-                      }`}
+                        }`}
                       title={apiKey ? "Chave configurada. Clique para gerenciar." : "Configurar chave do Gemini"}
                     >
                       <Key className="w-3.5 h-3.5 text-amber-500" />
@@ -730,8 +742,8 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
                       <span>{generationMessage}</span>
                     </div>
                     <div className="w-full bg-[var(--border-subtle)] rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full transition-all duration-500" 
+                      <div
+                        className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full transition-all duration-500"
                         style={{ width: `${(generationStep / 3) * 100}%` }}
                       ></div>
                     </div>
@@ -884,8 +896,8 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
 
                       {/* Animated Progress Bar */}
                       <div className="w-full bg-[var(--bg-subtle)] rounded-full h-2 overflow-hidden border border-[var(--border-subtle)]">
-                        <div 
-                          className="bg-gradient-to-r from-blue-600 to-cyan-500 h-full rounded-full transition-all duration-500" 
+                        <div
+                          className="bg-gradient-to-r from-blue-600 to-cyan-500 h-full rounded-full transition-all duration-500"
                           style={{ width: `${Math.max(25, (generationStep / 3) * 100)}%` }}
                         />
                       </div>
@@ -900,596 +912,594 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
                 )}
 
                 {/* Document Paper Preview with Blur during generation */}
-                <div 
-                  id="print-resume-sheet" 
-                  className={`bg-white text-gray-900 p-8 rounded-2xl shadow-2xl border border-gray-300 font-sans transition-all duration-300 ${
-                    isGenerating ? 'filter blur-[6px] opacity-40 select-none pointer-events-none scale-[0.99]' : ''
-                  }`}
+                <div
+                  id="print-resume-sheet"
+                  className={`bg-white text-gray-900 p-8 rounded-2xl shadow-2xl border border-gray-300 font-sans transition-all duration-300 ${isGenerating ? 'filter blur-[6px] opacity-40 select-none pointer-events-none scale-[0.99]' : ''
+                    }`}
                 >
-                
-                {/* Header (Nome e Contatos) */}
-                {isEditing ? (
-                  <div className="border-b border-amber-300 pb-4 mb-4 bg-amber-50/50 p-4 rounded-xl border border-dashed space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-extrabold text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <Edit3 className="w-3.5 h-3.5 text-amber-600" />
-                        Editar Dados Pessoais & Cabeçalho
-                      </span>
-                      <span className="text-[10px] text-amber-700 bg-amber-200/60 px-2 py-0.5 rounded font-bold">Editável</span>
-                    </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="text-[10px] text-gray-600 font-bold block mb-1">Nome Completo:</label>
-                        <input
-                          type="text"
-                          value={resumeData.fullName || ''}
-                          onChange={(e) => handleUpdateHeader('fullName', e.target.value)}
-                          className="w-full text-xs font-bold text-gray-900 bg-white border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500"
-                          placeholder="Seu nome completo"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-gray-600 font-bold block mb-1">Cargo Alvo / Título do Currículo:</label>
-                        <input
-                          type="text"
-                          value={resumeData.targetJobTitle || ''}
-                          onChange={(e) => handleUpdateHeader('targetJobTitle', e.target.value)}
-                          className="w-full text-xs font-bold text-gray-900 bg-white border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500"
-                          placeholder="Ex: Desenvolvedor Full Stack"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <div>
-                        <label className="text-[10px] text-gray-600 font-semibold block mb-0.5">E-mail:</label>
-                        <input
-                          type="email"
-                          value={resumeData.email || ''}
-                          onChange={(e) => handleUpdateHeader('email', e.target.value)}
-                          className="w-full text-[11px] text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                          placeholder="email@exemplo.com"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-gray-600 font-semibold block mb-0.5">Telefone:</label>
-                        <input
-                          type="text"
-                          value={resumeData.phone || ''}
-                          onChange={(e) => handleUpdateHeader('phone', e.target.value)}
-                          className="w-full text-[11px] text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                          placeholder="(11) 99999-9999"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-gray-600 font-semibold block mb-0.5">Localização:</label>
-                        <input
-                          type="text"
-                          value={resumeData.location || ''}
-                          onChange={(e) => handleUpdateHeader('location', e.target.value)}
-                          className="w-full text-[11px] text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                          placeholder="São Paulo, SP"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-gray-600 font-semibold block mb-0.5">LinkedIn / GitHub:</label>
-                        <input
-                          type="text"
-                          value={resumeData.linkedin || ''}
-                          onChange={(e) => handleUpdateHeader('linkedin', e.target.value)}
-                          className="w-full text-[11px] text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                          placeholder="linkedin.com/in/perfil"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="border-b border-gray-300 pb-4 mb-4">
-                    <h1 className="text-2xl font-bold text-blue-700 uppercase tracking-tight">
-                      {resumeData.fullName || "Lucas Silva Pessoa"}
-                    </h1>
-                    <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mt-0.5 break-words">
-                      {cleanResumeTitle(resumeData.targetJobTitle)}
-                    </p>
-                    <p className="text-[11px] text-gray-600 mt-2 break-words leading-relaxed">
-                      {[resumeData.email, resumeData.phone, resumeData.location, resumeData.linkedin].filter(Boolean).join('  |  ') || "Preencha seus contatos na aba 'Meu Perfil'"}
-                    </p>
-                  </div>
-                )}
-
-                {/* Summary Section */}
-                <div className="mb-5">
-                  <div className="flex items-center justify-between border-b border-blue-200 pb-1 mb-2">
-                    <h2 className="text-xs font-bold text-blue-700 uppercase">
-                      {resumeData.language === 'en' ? 'Professional Summary' : 'Resumo Profissional'}
-                    </h2>
-                    {isEditing && (
-                      <span className="text-[10px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded font-bold flex items-center gap-1">
-                        <Edit3 className="w-3 h-3" /> Editando Resumo
-                      </span>
-                    )}
-                  </div>
-                  
+                  {/* Header (Nome e Contatos) */}
                   {isEditing ? (
-                    <div className="space-y-1.5">
-                      <textarea
-                        value={resumeData.tailoredSummary || ''}
-                        onChange={(e) => handleUpdateSummary(e.target.value)}
-                        rows={7}
-                        className="w-full text-xs text-gray-900 bg-amber-50/50 border border-amber-300 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 leading-relaxed font-sans"
-                        placeholder="Edite o resumo profissional gerado pela IA..."
-                      />
-                      <p className="text-[10px] text-gray-500">
-                        Dica ATS: 1 ou 2 parágrafos curtos com sua formação, principais tecnologias e impacto prático.
+                    <div className="border-b border-amber-300 pb-4 mb-4 bg-amber-50/50 p-4 rounded-xl border border-dashed space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-extrabold text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <Edit3 className="w-3.5 h-3.5 text-amber-600" />
+                          Editar Dados Pessoais & Cabeçalho
+                        </span>
+                        <span className="text-[10px] text-amber-700 bg-amber-200/60 px-2 py-0.5 rounded font-bold">Editável</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-[10px] text-gray-600 font-bold block mb-1">Nome Completo:</label>
+                          <input
+                            type="text"
+                            value={resumeData.fullName || ''}
+                            onChange={(e) => handleUpdateHeader('fullName', e.target.value)}
+                            className="w-full text-xs font-bold text-gray-900 bg-white border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500"
+                            placeholder="Seu nome completo"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-600 font-bold block mb-1">Cargo Alvo / Título do Currículo:</label>
+                          <input
+                            type="text"
+                            value={resumeData.targetJobTitle || ''}
+                            onChange={(e) => handleUpdateHeader('targetJobTitle', e.target.value)}
+                            className="w-full text-xs font-bold text-gray-900 bg-white border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500"
+                            placeholder="Ex: Desenvolvedor Full Stack"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div>
+                          <label className="text-[10px] text-gray-600 font-semibold block mb-0.5">E-mail:</label>
+                          <input
+                            type="email"
+                            value={resumeData.email || ''}
+                            onChange={(e) => handleUpdateHeader('email', e.target.value)}
+                            className="w-full text-[11px] text-gray-900 bg-white border border-gray-300 rounded p-1.5"
+                            placeholder="email@exemplo.com"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-600 font-semibold block mb-0.5">Telefone:</label>
+                          <input
+                            type="text"
+                            value={resumeData.phone || ''}
+                            onChange={(e) => handleUpdateHeader('phone', e.target.value)}
+                            className="w-full text-[11px] text-gray-900 bg-white border border-gray-300 rounded p-1.5"
+                            placeholder="(11) 99999-9999"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-600 font-semibold block mb-0.5">Localização:</label>
+                          <input
+                            type="text"
+                            value={resumeData.location || ''}
+                            onChange={(e) => handleUpdateHeader('location', e.target.value)}
+                            className="w-full text-[11px] text-gray-900 bg-white border border-gray-300 rounded p-1.5"
+                            placeholder="São Paulo, SP"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-600 font-semibold block mb-0.5">LinkedIn / GitHub:</label>
+                          <input
+                            type="text"
+                            value={resumeData.linkedin || ''}
+                            onChange={(e) => handleUpdateHeader('linkedin', e.target.value)}
+                            className="w-full text-[11px] text-gray-900 bg-white border border-gray-300 rounded p-1.5"
+                            placeholder="linkedin.com/in/perfil"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border-b border-gray-300 pb-4 mb-4">
+                      <h1 className="text-2xl font-bold text-blue-700 uppercase tracking-tight">
+                        {resumeData.fullName || "Lucas Silva Pessoa"}
+                      </h1>
+                      <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mt-0.5 break-words">
+                        {cleanResumeTitle(resumeData.targetJobTitle)}
+                      </p>
+                      <p className="text-[11px] text-gray-600 mt-2 break-words leading-relaxed">
+                        {[resumeData.email, resumeData.phone, resumeData.location, resumeData.linkedin].filter(Boolean).join('  |  ') || "Preencha seus contatos na aba 'Meu Perfil'"}
                       </p>
                     </div>
-                  ) : (
-                    <div className="text-xs text-gray-800 leading-relaxed whitespace-pre-line space-y-3 font-sans">
-                      {resumeData.tailoredSummary}
-                    </div>
                   )}
-                </div>
 
-                {/* Technical Skills Section */}
-                <div className="mb-5">
-                  <div className="flex items-center justify-between border-b border-blue-200 pb-1 mb-2">
-                    <h2 className="text-xs font-bold text-blue-700 uppercase">
-                      {resumeData.language === 'en' ? 'Technical Skills' : 'Habilidades Técnicas'}
-                    </h2>
-                    {isEditing && (
-                      <span className="text-[10px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded font-bold">
-                        Separe por vírgulas
-                      </span>
-                    )}
-                  </div>
-
-                  {isEditing ? (
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        value={(resumeData.skills || []).join(', ')}
-                        onChange={(e) => handleUpdateSkills(e.target.value)}
-                        className="w-full text-xs text-gray-900 bg-amber-50/50 border border-amber-300 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-sans"
-                        placeholder="Ex: React, Next.js, Node.js, Python, SQL, REST APIs, Git, Docker"
-                      />
-                      <div className="flex flex-wrap gap-1">
-                        {(resumeData.skills || []).map((sk, sIdx) => (
-                          <span key={sIdx} className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-semibold">
-                            {sk}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-gray-800 font-medium leading-relaxed">
-                      {(resumeData.skills || []).join('  |  ')}
-                    </p>
-                  )}
-                </div>
-
-                {/* Experience Section */}
-                <div className="mb-5">
-                  <div className="flex items-center justify-between border-b border-blue-200 pb-1 mb-2">
-                    <h2 className="text-xs font-bold text-blue-700 uppercase">
-                      {resumeData.language === 'en' ? 'Professional Experience' : 'Experiência Profissional'}
-                    </h2>
-                    {isEditing && (
-                      <button
-                        type="button"
-                        onClick={handleAddExperience}
-                        className="text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>Adicionar Nova Empresa</span>
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="space-y-4">
-                    {(resumeData.experiences || []).map((exp, idx) => {
-                      const cleanPeriod = (exp.period || "").replace(/^\((.*)\)$/, "$1");
-                      const bulletList = exp.bullets && exp.bullets.length > 0 
-                        ? exp.bullets 
-                        : (exp.description || "").split('\n').filter(Boolean);
-
-                      return (
-                        <div key={idx} className={isEditing ? 'p-3 bg-amber-50/40 rounded-xl border border-amber-200 space-y-2' : ''}>
-                          
-                          {isEditing ? (
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-[11px] font-bold text-amber-800">Experiência #{idx + 1}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveExperience(idx)}
-                                  className="text-[10px] text-red-600 hover:text-red-800 flex items-center gap-1 font-semibold cursor-pointer"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                  <span>Remover Empresa</span>
-                                </button>
-                              </div>
-
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                <div>
-                                  <label className="text-[10px] text-gray-600 font-bold block mb-0.5">Cargo:</label>
-                                  <input
-                                    type="text"
-                                    value={exp.role || ''}
-                                    onChange={(e) => handleUpdateExpField(idx, 'role', e.target.value)}
-                                    className="w-full text-xs font-bold text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                                    placeholder="Ex: Desenvolvedor Full Stack"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="text-[10px] text-gray-600 font-bold block mb-0.5">Empresa:</label>
-                                  <input
-                                    type="text"
-                                    value={exp.company || ''}
-                                    onChange={(e) => handleUpdateExpField(idx, 'company', e.target.value)}
-                                    className="w-full text-xs text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                                    placeholder="Ex: Tech Solutions"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="text-[10px] text-gray-600 font-bold block mb-0.5">Período:</label>
-                                  <input
-                                    type="text"
-                                    value={exp.period || ''}
-                                    onChange={(e) => handleUpdateExpField(idx, 'period', e.target.value)}
-                                    className="w-full text-xs text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                                    placeholder="Ex: 2023 - Atual"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="space-y-1.5 pt-1">
-                                <label className="text-[10px] text-gray-600 font-bold block">
-                                  Tópicos de Realização & Entregas (Método STAR):
-                                </label>
-                                {bulletList.map((bullet, bIdx) => (
-                                  <div key={bIdx} className="flex items-start gap-1.5">
-                                    <textarea
-                                      value={bullet.replace(/^[•\-\s]+/, '')}
-                                      onChange={(e) => handleUpdateBullet(idx, bIdx, e.target.value)}
-                                      rows={2}
-                                      className="w-full text-xs text-gray-900 bg-white border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-blue-500 leading-relaxed font-sans"
-                                      placeholder="Ação + Tecnologia + Resultado concreto..."
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveBullet(idx, bIdx)}
-                                      className="p-1.5 text-gray-400 hover:text-red-600 transition-colors cursor-pointer"
-                                      title="Remover este tópico"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                ))}
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleAddBullet(idx)}
-                                  className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 pt-1 cursor-pointer"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                  <span>+ Adicionar Tópico nesta Experiência</span>
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div>
-                              <div className="flex justify-between items-baseline">
-                                <h3 className="text-xs font-bold text-gray-900">{exp.role}</h3>
-                                <span className="text-[11px] text-gray-500 font-semibold">
-                                  {cleanCompanyName(exp.company)} {cleanPeriod ? `• ${cleanPeriod}` : ''}
-                                </span>
-                              </div>
-
-                              <ul className="list-disc list-inside space-y-1.5 text-xs text-gray-700 mt-1.5 pl-1">
-                                {Array.from(new Set(bulletList.map(b => b.replace(/^[•\-\s]+/, '').trim()))).filter(Boolean).map((cleanBullet, bIdx) => (
-                                  <li key={bIdx} className="leading-relaxed">
-                                    {cleanBullet}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Education Section */}
-                <div>
-                  <div className="flex items-center justify-between border-b border-blue-200 pb-1 mb-2">
-                    <h2 className="text-xs font-bold text-blue-700 uppercase">
-                      {resumeData.language === 'en' ? 'Education' : 'Formação Acadêmica'}
-                    </h2>
-                    {isEditing && (
-                      <button
-                        type="button"
-                        onClick={handleAddEducation}
-                        className="text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>Adicionar Formação</span>
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    {(resumeData.education || []).map((edu, idx) => (
-                      <div key={idx}>
-                        {isEditing ? (
-                          <div className="flex items-center gap-2 p-2 bg-amber-50/40 rounded-lg border border-amber-200">
-                            <input
-                              type="text"
-                              value={edu.degree || ''}
-                              onChange={(e) => handleUpdateEduField(idx, 'degree', e.target.value)}
-                              className="flex-1 text-xs font-bold text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                              placeholder="Curso / Graduação"
-                            />
-                            <input
-                              type="text"
-                              value={edu.institution || ''}
-                              onChange={(e) => handleUpdateEduField(idx, 'institution', e.target.value)}
-                              className="flex-1 text-xs text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                              placeholder="Instituição (ex: SENAC)"
-                            />
-                            <input
-                              type="text"
-                              value={edu.year || ''}
-                              onChange={(e) => handleUpdateEduField(idx, 'year', e.target.value)}
-                              className="w-24 text-xs text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                              placeholder="Ano / Status"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveEducation(idx)}
-                              className="p-1 text-gray-400 hover:text-red-600 cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex justify-between text-xs text-gray-800">
-                            <span className="font-bold">{edu.degree}</span>
-                            <span className="text-gray-600">{edu.institution} {edu.year ? `(${edu.year})` : ''}</span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Languages Section in Document */}
-                {((resumeData.languages && resumeData.languages.length > 0) || isEditing) && (
-                  <div>
+                  {/* Summary Section */}
+                  <div className="mb-5">
                     <div className="flex items-center justify-between border-b border-blue-200 pb-1 mb-2">
-                      <h2 className="text-xs font-bold text-blue-700 uppercase flex items-center gap-1.5">
-                        <Languages className="w-3.5 h-3.5" />
-                        {resumeData.language === 'en' ? 'Languages & Proficiency' : 'Idiomas & Fluência'}
+                      <h2 className="text-xs font-bold text-blue-700 uppercase">
+                        {resumeData.language === 'en' ? 'Professional Summary' : 'Resumo Profissional'}
                       </h2>
                       {isEditing && (
-                        <button
-                          type="button"
-                          onClick={handleAddLanguageInModal}
-                          className="text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer"
-                        >
-                          <Plus className="w-3 h-3" />
-                          <span>Adicionar Idioma</span>
-                        </button>
+                        <span className="text-[10px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded font-bold flex items-center gap-1">
+                          <Edit3 className="w-3 h-3" /> Editando Resumo
+                        </span>
+                      )}
+                    </div>
+
+                    {isEditing ? (
+                      <div className="space-y-1.5">
+                        <textarea
+                          value={resumeData.tailoredSummary || ''}
+                          onChange={(e) => handleUpdateSummary(e.target.value)}
+                          rows={7}
+                          className="w-full text-xs text-gray-900 bg-amber-50/50 border border-amber-300 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 leading-relaxed font-sans"
+                          placeholder="Edite o resumo profissional gerado pela IA..."
+                        />
+                        <p className="text-[10px] text-gray-500">
+                          Dica ATS: 1 ou 2 parágrafos curtos com sua formação, principais tecnologias e impacto prático.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-800 leading-relaxed whitespace-pre-line space-y-3 font-sans">
+                        {resumeData.tailoredSummary}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Technical Skills Section */}
+                  <div className="mb-5">
+                    <div className="flex items-center justify-between border-b border-blue-200 pb-1 mb-2">
+                      <h2 className="text-xs font-bold text-blue-700 uppercase">
+                        {resumeData.language === 'en' ? 'Technical Skills' : 'Habilidades Técnicas'}
+                      </h2>
+                      {isEditing && (
+                        <span className="text-[10px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded font-bold">
+                          Separe por vírgulas
+                        </span>
                       )}
                     </div>
 
                     {isEditing ? (
                       <div className="space-y-2">
-                        {(resumeData.languages || []).map((lang, lIdx) => {
-                          const lObj = typeof lang === 'string' ? { name: lang, level: 'Intermediário (B2)' } : lang;
-                          return (
-                            <div key={lIdx} className="flex items-center gap-2 p-2 bg-amber-50/40 rounded-lg border border-amber-200">
+                        <input
+                          type="text"
+                          value={(resumeData.skills || []).join(', ')}
+                          onChange={(e) => handleUpdateSkills(e.target.value)}
+                          className="w-full text-xs text-gray-900 bg-amber-50/50 border border-amber-300 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-sans"
+                          placeholder="Ex: React, Next.js, Node.js, Python, SQL, REST APIs, Git, Docker"
+                        />
+                        <div className="flex flex-wrap gap-1">
+                          {(resumeData.skills || []).map((sk, sIdx) => (
+                            <span key={sIdx} className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-semibold">
+                              {sk}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-800 font-medium leading-relaxed">
+                        {(resumeData.skills || []).join('  |  ')}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Experience Section */}
+                  <div className="mb-5">
+                    <div className="flex items-center justify-between border-b border-blue-200 pb-1 mb-2">
+                      <h2 className="text-xs font-bold text-blue-700 uppercase">
+                        {resumeData.language === 'en' ? 'Professional Experience' : 'Experiência Profissional'}
+                      </h2>
+                      {isEditing && (
+                        <button
+                          type="button"
+                          onClick={handleAddExperience}
+                          className="text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Adicionar Nova Empresa</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-4">
+                      {(resumeData.experiences || []).map((exp, idx) => {
+                        const cleanPeriod = (exp.period || "").replace(/^\((.*)\)$/, "$1");
+                        const bulletList = exp.bullets && exp.bullets.length > 0
+                          ? exp.bullets
+                          : (exp.description || "").split('\n').filter(Boolean);
+
+                        return (
+                          <div key={idx} className={isEditing ? 'p-3 bg-amber-50/40 rounded-xl border border-amber-200 space-y-2' : ''}>
+
+                            {isEditing ? (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-bold text-amber-800">Experiência #{idx + 1}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveExperience(idx)}
+                                    className="text-[10px] text-red-600 hover:text-red-800 flex items-center gap-1 font-semibold cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    <span>Remover Empresa</span>
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  <div>
+                                    <label className="text-[10px] text-gray-600 font-bold block mb-0.5">Cargo:</label>
+                                    <input
+                                      type="text"
+                                      value={exp.role || ''}
+                                      onChange={(e) => handleUpdateExpField(idx, 'role', e.target.value)}
+                                      className="w-full text-xs font-bold text-gray-900 bg-white border border-gray-300 rounded p-1.5"
+                                      placeholder="Ex: Desenvolvedor Full Stack"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-gray-600 font-bold block mb-0.5">Empresa:</label>
+                                    <input
+                                      type="text"
+                                      value={exp.company || ''}
+                                      onChange={(e) => handleUpdateExpField(idx, 'company', e.target.value)}
+                                      className="w-full text-xs text-gray-900 bg-white border border-gray-300 rounded p-1.5"
+                                      placeholder="Ex: Tech Solutions"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[10px] text-gray-600 font-bold block mb-0.5">Período:</label>
+                                    <input
+                                      type="text"
+                                      value={exp.period || ''}
+                                      onChange={(e) => handleUpdateExpField(idx, 'period', e.target.value)}
+                                      className="w-full text-xs text-gray-900 bg-white border border-gray-300 rounded p-1.5"
+                                      placeholder="Ex: 2023 - Atual"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="space-y-1.5 pt-1">
+                                  <label className="text-[10px] text-gray-600 font-bold block">
+                                    Tópicos de Realização & Entregas (Método STAR):
+                                  </label>
+                                  {bulletList.map((bullet, bIdx) => (
+                                    <div key={bIdx} className="flex items-start gap-1.5">
+                                      <textarea
+                                        value={bullet.replace(/^[•\-\s]+/, '')}
+                                        onChange={(e) => handleUpdateBullet(idx, bIdx, e.target.value)}
+                                        rows={2}
+                                        className="w-full text-xs text-gray-900 bg-white border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-blue-500 leading-relaxed font-sans"
+                                        placeholder="Ação + Tecnologia + Resultado concreto..."
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveBullet(idx, bIdx)}
+                                        className="p-1.5 text-gray-400 hover:text-red-600 transition-colors cursor-pointer"
+                                        title="Remover este tópico"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ))}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddBullet(idx)}
+                                    className="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 pt-1 cursor-pointer"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>+ Adicionar Tópico nesta Experiência</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div>
+                                <div className="flex justify-between items-baseline">
+                                  <h3 className="text-xs font-bold text-gray-900">{exp.role}</h3>
+                                  <span className="text-[11px] text-gray-500 font-semibold">
+                                    {cleanCompanyName(exp.company)} {cleanPeriod ? `• ${cleanPeriod}` : ''}
+                                  </span>
+                                </div>
+
+                                <ul className="list-disc list-inside space-y-1.5 text-xs text-gray-700 mt-1.5 pl-1">
+                                  {Array.from(new Set(bulletList.map(b => b.replace(/^[•\-\s]+/, '').trim()))).filter(Boolean).map((cleanBullet, bIdx) => (
+                                    <li key={bIdx} className="leading-relaxed">
+                                      {cleanBullet}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Education Section */}
+                  <div>
+                    <div className="flex items-center justify-between border-b border-blue-200 pb-1 mb-2">
+                      <h2 className="text-xs font-bold text-blue-700 uppercase">
+                        {resumeData.language === 'en' ? 'Education' : 'Formação Acadêmica'}
+                      </h2>
+                      {isEditing && (
+                        <button
+                          type="button"
+                          onClick={handleAddEducation}
+                          className="text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Adicionar Formação</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      {(resumeData.education || []).map((edu, idx) => (
+                        <div key={idx}>
+                          {isEditing ? (
+                            <div className="flex items-center gap-2 p-2 bg-amber-50/40 rounded-lg border border-amber-200">
                               <input
                                 type="text"
-                                value={lObj.name || ''}
-                                onChange={(e) => handleUpdateLanguageField(lIdx, 'name', e.target.value)}
+                                value={edu.degree || ''}
+                                onChange={(e) => handleUpdateEduField(idx, 'degree', e.target.value)}
                                 className="flex-1 text-xs font-bold text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                                placeholder="Ex: Inglês"
+                                placeholder="Curso / Graduação"
                               />
-                              <select
-                                value={lObj.level || 'Intermediário (B2)'}
-                                onChange={(e) => handleUpdateLanguageField(lIdx, 'level', e.target.value)}
-                                className="w-48 text-xs font-medium text-gray-900 bg-white border border-gray-300 rounded p-1.5"
-                              >
-                                <option value="Nativo">Nativo</option>
-                                <option value="Fluente (C2)">Fluente (C2)</option>
-                                <option value="Avançado (C1)">Avançado (C1)</option>
-                                <option value="Intermediário (B2)">Intermediário (B2)</option>
-                                <option value="Básico (A2)">Básico (A2)</option>
-                              </select>
+                              <input
+                                type="text"
+                                value={edu.institution || ''}
+                                onChange={(e) => handleUpdateEduField(idx, 'institution', e.target.value)}
+                                className="flex-1 text-xs text-gray-900 bg-white border border-gray-300 rounded p-1.5"
+                                placeholder="Instituição (ex: SENAC)"
+                              />
+                              <input
+                                type="text"
+                                value={edu.year || ''}
+                                onChange={(e) => handleUpdateEduField(idx, 'year', e.target.value)}
+                                className="w-24 text-xs text-gray-900 bg-white border border-gray-300 rounded p-1.5"
+                                placeholder="Ano / Status"
+                              />
                               <button
                                 type="button"
-                                onClick={() => handleRemoveLanguageInModal(lIdx)}
+                                onClick={() => handleRemoveEducation(idx)}
                                 className="p-1 text-gray-400 hover:text-red-600 cursor-pointer"
-                                title="Remover idioma"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-800">
-                        {(resumeData.languages || []).map((lang, lIdx) => {
-                          const lObj = typeof lang === 'string' ? { name: lang, level: '' } : lang;
-                          return (
-                            <span key={lIdx} className="inline-flex items-center gap-1.5">
-                              <span className="font-bold text-gray-900">{lObj.name}</span>
-                              {lObj.level && <span className="text-gray-600 font-medium text-[11px]">({lObj.level})</span>}
-                              {lIdx < (resumeData.languages.length - 1) && <span className="text-gray-300 ml-2 font-normal">|</span>}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
+                          ) : (
+                            <div className="flex justify-between text-xs text-gray-800">
+                              <span className="font-bold">{edu.degree}</span>
+                              <span className="text-gray-600">{edu.institution} {edu.year ? `(${edu.year})` : ''}</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                )}
 
+                  {/* Languages Section in Document */}
+                  {((resumeData.languages && resumeData.languages.length > 0) || isEditing) && (
+                    <div>
+                      <div className="flex items-center justify-between border-b border-blue-200 pb-1 mb-2">
+                        <h2 className="text-xs font-bold text-blue-700 uppercase flex items-center gap-1.5">
+                          <Languages className="w-3.5 h-3.5" />
+                          {resumeData.language === 'en' ? 'Languages & Proficiency' : 'Idiomas & Fluência'}
+                        </h2>
+                        {isEditing && (
+                          <button
+                            type="button"
+                            onClick={handleAddLanguageInModal}
+                            className="text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-0.5 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Adicionar Idioma</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          {(resumeData.languages || []).map((lang, lIdx) => {
+                            const lObj = typeof lang === 'string' ? { name: lang, level: 'Intermediário (B2)' } : lang;
+                            return (
+                              <div key={lIdx} className="flex items-center gap-2 p-2 bg-amber-50/40 rounded-lg border border-amber-200">
+                                <input
+                                  type="text"
+                                  value={lObj.name || ''}
+                                  onChange={(e) => handleUpdateLanguageField(lIdx, 'name', e.target.value)}
+                                  className="flex-1 text-xs font-bold text-gray-900 bg-white border border-gray-300 rounded p-1.5"
+                                  placeholder="Ex: Inglês"
+                                />
+                                <select
+                                  value={lObj.level || 'Intermediário (B2)'}
+                                  onChange={(e) => handleUpdateLanguageField(lIdx, 'level', e.target.value)}
+                                  className="w-48 text-xs font-medium text-gray-900 bg-white border border-gray-300 rounded p-1.5"
+                                >
+                                  <option value="Nativo">Nativo</option>
+                                  <option value="Fluente (C2)">Fluente (C2)</option>
+                                  <option value="Avançado (C1)">Avançado (C1)</option>
+                                  <option value="Intermediário (B2)">Intermediário (B2)</option>
+                                  <option value="Básico (A2)">Básico (A2)</option>
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveLanguageInModal(lIdx)}
+                                  className="p-1 text-gray-400 hover:text-red-600 cursor-pointer"
+                                  title="Remover idioma"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-800">
+                          {(resumeData.languages || []).map((lang, lIdx) => {
+                            const lObj = typeof lang === 'string' ? { name: lang, level: '' } : lang;
+                            return (
+                              <span key={lIdx} className="inline-flex items-center gap-1.5">
+                                <span className="font-bold text-gray-900">{lObj.name}</span>
+                                {lObj.level && <span className="text-gray-600 font-medium text-[11px]">({lObj.level})</span>}
+                                {lIdx < (resumeData.languages.length - 1) && <span className="text-gray-300 ml-2 font-normal">|</span>}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            </>
+          ) : activeTab === 'job_desc' ? (
+            /* Job Description Tab */
+            <div className="space-y-4 animate-fade-in">
+              {/* Job Header & Meta */}
+              <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+                <div className="flex items-start gap-4">
+                  <img
+                    src={job.companyLogo}
+                    alt={job.company}
+                    className="w-12 h-12 rounded-xl object-cover border border-[var(--border-subtle)] bg-[var(--bg-subtle)]"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=100&auto=format&fit=crop&q=80";
+                    }}
+                  />
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                        {job.workType}
+                      </span>
+                      <span className="text-xs text-[var(--text-muted)] bg-[var(--bg-subtle)] px-2 py-0.5 rounded border border-[var(--border-subtle)]">
+                        {job.source}
+                      </span>
+                      {job.level && (
+                        <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded font-medium">
+                          {job.level}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-base font-bold text-[var(--text-main)]">{job.title}</h3>
+                    <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                      <strong className="text-blue-600 dark:text-blue-400">{job.company}</strong> • {job.location} • {job.salary || "Salário a combinar"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setActiveTab('resume')}
+                    className="gradient-btn px-4 py-2 rounded-xl text-xs font-bold text-white shadow-lg flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Ver Currículo Adaptado</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Requirements tags */}
+              {job.requirements && job.requirements.length > 0 && (
+                <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] p-4 rounded-2xl space-y-2 shadow-sm">
+                  <h4 className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+                    Requisitos & Tecnologias Solicitadas
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {job.requirements.map((req, i) => (
+                      <span key={i} className="text-xs px-2.5 py-1 rounded-lg bg-[var(--bg-subtle)] text-[var(--text-main)] border border-[var(--border-subtle)] font-medium">
+                        {req}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Full Job Description */}
+              <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] p-5 rounded-2xl space-y-3 shadow-sm">
+                <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  Descrição Completa da Vaga
+                </h4>
+                <div className="text-xs text-[var(--text-main)] leading-relaxed font-sans whitespace-pre-line bg-[var(--bg-subtle)] p-4 rounded-xl border border-[var(--border-subtle)]">
+                  {job.description || "Nenhuma descrição textual adicional foi disponibilizada pela plataforma anunciante."}
+                </div>
               </div>
             </div>
-          </>
-        ) : activeTab === 'job_desc' ? (
-          /* Job Description Tab */
-          <div className="space-y-4 animate-fade-in">
-            {/* Job Header & Meta */}
-            <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
-              <div className="flex items-start gap-4">
-                <img
-                  src={job.companyLogo}
-                  alt={job.company}
-                  className="w-12 h-12 rounded-xl object-cover border border-[var(--border-subtle)] bg-[var(--bg-subtle)]"
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=100&auto=format&fit=crop&q=80";
-                  }}
-                />
+          ) : (
+            /* Cover Letter Tab (Editable & AI generated) */
+            <div className="space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between flex-wrap gap-3 bg-[var(--bg-card)] border border-[var(--border-subtle)] p-4 rounded-2xl shadow-sm">
                 <div>
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                      {job.workType}
-                    </span>
-                    <span className="text-xs text-[var(--text-muted)] bg-[var(--bg-subtle)] px-2 py-0.5 rounded border border-[var(--border-subtle)]">
-                      {job.source}
-                    </span>
-                    {job.level && (
-                      <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded font-medium">
-                        {job.level}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm font-bold text-[var(--text-main)] flex items-center gap-1.5">
+                      <Mail className="w-4 h-4 text-blue-600 dark:text-blue-400" /> Carta de Apresentação Otimizada
+                    </h3>
+                    {coverLetterIsAI ? (
+                      <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-emerald-500" />
+                        Gerada por IA ({coverLetterModel || 'Gemini'})
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-[var(--text-muted)] bg-[var(--bg-subtle)] border border-[var(--border-subtle)] px-2 py-0.5 rounded-full">
+                        Modelo ATS Estruturado
                       </span>
                     )}
                   </div>
-                  <h3 className="text-base font-bold text-[var(--text-main)]">{job.title}</h3>
                   <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                    <strong className="text-blue-600 dark:text-blue-400">{job.company}</strong> • {job.location} • {job.salary || "Salário a combinar"}
+                    Personalizada pela inteligência artificial com base no seu perfil e nas exigências da vaga. Você pode editar livremente.
                   </p>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setActiveTab('resume')}
-                  className="gradient-btn px-4 py-2 rounded-xl text-xs font-bold text-white shadow-lg flex items-center gap-1.5 cursor-pointer"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Ver Currículo Adaptado</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Requirements tags */}
-            {job.requirements && job.requirements.length > 0 && (
-              <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] p-4 rounded-2xl space-y-2 shadow-sm">
-                <h4 className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
-                  Requisitos & Tecnologias Solicitadas
-                </h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {job.requirements.map((req, i) => (
-                    <span key={i} className="text-xs px-2.5 py-1 rounded-lg bg-[var(--bg-subtle)] text-[var(--text-main)] border border-[var(--border-subtle)] font-medium">
-                      {req}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Full Job Description */}
-            <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] p-5 rounded-2xl space-y-3 shadow-sm">
-              <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-2">
-                <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                Descrição Completa da Vaga
-              </h4>
-              <div className="text-xs text-[var(--text-main)] leading-relaxed font-sans whitespace-pre-line bg-[var(--bg-subtle)] p-4 rounded-xl border border-[var(--border-subtle)]">
-                {job.description || "Nenhuma descrição textual adicional foi disponibilizada pela plataforma anunciante."}
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* Cover Letter Tab (Editable & AI generated) */
-          <div className="space-y-4 animate-fade-in">
-            <div className="flex items-center justify-between flex-wrap gap-3 bg-[var(--bg-card)] border border-[var(--border-subtle)] p-4 rounded-2xl shadow-sm">
-              <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-sm font-bold text-[var(--text-main)] flex items-center gap-1.5">
-                    <Mail className="w-4 h-4 text-blue-600 dark:text-blue-400" /> Carta de Apresentação Otimizada
-                  </h3>
-                  {coverLetterIsAI ? (
-                    <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-emerald-500" />
-                      Gerada por IA ({coverLetterModel || 'Gemini'})
-                    </span>
-                  ) : (
-                    <span className="text-[11px] text-[var(--text-muted)] bg-[var(--bg-subtle)] border border-[var(--border-subtle)] px-2 py-0.5 rounded-full">
-                      Modelo ATS Estruturado
-                    </span>
-                  )}
+                  <button
+                    onClick={handleRegenerateCoverLetter}
+                    disabled={isGeneratingCoverLetter}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white shadow-sm cursor-pointer disabled:opacity-50"
+                    title="Gerar uma nova versão da carta de apresentação utilizando Inteligência Artificial"
+                  >
+                    <Sparkles className={`w-3.5 h-3.5 ${isGeneratingCoverLetter ? 'animate-spin' : ''}`} />
+                    <span>{isGeneratingCoverLetter ? 'Escrevendo com IA...' : 'Regenerar Carta com IA'}</span>
+                  </button>
+
+                  <button
+                    onClick={handleCopyCoverLetter}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${copied
+                        ? 'bg-emerald-600/15 text-emerald-600 dark:text-emerald-300 border-emerald-500/40'
+                        : 'bg-[var(--bg-subtle)] hover:bg-[var(--bg-card)] text-[var(--text-main)] border-[var(--border-subtle)]'
+                      }`}
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-4 h-4 text-emerald-500" />
+                        <span>Copiado!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4 text-[var(--text-muted)]" />
+                        <span>Copiar Texto</span>
+                      </>
+                    )}
+                  </button>
                 </div>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  Personalizada pela inteligência artificial com base no seu perfil e nas exigências da vaga. Você pode editar livremente.
-                </p>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={handleRegenerateCoverLetter}
-                  disabled={isGeneratingCoverLetter}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white shadow-sm cursor-pointer disabled:opacity-50"
-                  title="Gerar uma nova versão da carta de apresentação utilizando Inteligência Artificial"
-                >
-                  <Sparkles className={`w-3.5 h-3.5 ${isGeneratingCoverLetter ? 'animate-spin' : ''}`} />
-                  <span>{isGeneratingCoverLetter ? 'Escrevendo com IA...' : 'Regenerar Carta com IA'}</span>
-                </button>
+              {isGeneratingCoverLetter && (
+                <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2.5 animate-pulse">
+                  <Sparkles className="w-4 h-4 animate-spin text-blue-500" />
+                  <span>A IA está redigindo uma carta de apresentação convincente com foco na vaga de {job.title}...</span>
+                </div>
+              )}
 
-                <button
-                  onClick={handleCopyCoverLetter}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
-                    copied 
-                      ? 'bg-emerald-600/15 text-emerald-600 dark:text-emerald-300 border-emerald-500/40' 
-                      : 'bg-[var(--bg-subtle)] hover:bg-[var(--bg-card)] text-[var(--text-main)] border-[var(--border-subtle)]'
-                  }`}
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-4 h-4 text-emerald-500" />
-                      <span>Copiado!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4 text-[var(--text-muted)]" />
-                      <span>Copiar Texto</span>
-                    </>
-                  )}
-                </button>
-              </div>
+              <textarea
+                value={coverLetterText}
+                onChange={(e) => setCoverLetterText(e.target.value)}
+                rows={14}
+                className="w-full p-5 rounded-2xl text-xs leading-relaxed font-sans resize-y bg-[var(--bg-subtle)] text-[var(--text-main)] border border-[var(--border-subtle)] focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-inner"
+                placeholder="Edite sua carta de apresentação..."
+              />
             </div>
-
-            {isGeneratingCoverLetter && (
-              <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-600 dark:text-blue-400 flex items-center gap-2.5 animate-pulse">
-                <Sparkles className="w-4 h-4 animate-spin text-blue-500" />
-                <span>A IA está redigindo uma carta de apresentação convincente com foco na vaga de {job.title}...</span>
-              </div>
-            )}
-
-            <textarea
-              value={coverLetterText}
-              onChange={(e) => setCoverLetterText(e.target.value)}
-              rows={14}
-              className="w-full p-5 rounded-2xl text-xs leading-relaxed font-sans resize-y bg-[var(--bg-subtle)] text-[var(--text-main)] border border-[var(--border-subtle)] focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-inner"
-              placeholder="Edite sua carta de apresentação..."
-            />
-          </div>
-        )}
+          )}
 
         </div>
 

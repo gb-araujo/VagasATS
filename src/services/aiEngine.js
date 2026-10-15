@@ -4,6 +4,7 @@
 import { recordAiRequest } from './quotaTracker.js';
 import { cleanResumeTitle, cleanCompanyName, sanitizePdfText } from './pdfService.js';
 import { INITIAL_JOBS } from '../data/mockJobs.js';
+import { loadAiSettings } from './storageService.js';
 
 // Cache de alta performance para cálculo de compatibilidade de vagas
 const matchCache = new Map();
@@ -507,12 +508,12 @@ export function generateTailoredResume(userProfile, job, tone = 'balanced', targ
     education: userProfile.education || [],
     languages: (userProfile.languages && userProfile.languages.length > 0)
       ? userProfile.languages.map(l => {
-          if (typeof l === 'string') {
-            const match = l.match(/^(.*?)\s*\((.*?)\)$/);
-            return match ? { name: sanitizePdfText(match[1].trim()), level: sanitizePdfText(match[2].trim()) } : { name: sanitizePdfText(l.trim()), level: 'Intermediário (B2)' };
-          }
-          return { name: sanitizePdfText(l.name || ''), level: sanitizePdfText(l.level || 'Intermediário (B2)') };
-        })
+        if (typeof l === 'string') {
+          const match = l.match(/^(.*?)\s*\((.*?)\)$/);
+          return match ? { name: sanitizePdfText(match[1].trim()), level: sanitizePdfText(match[2].trim()) } : { name: sanitizePdfText(l.trim()), level: 'Intermediário (B2)' };
+        }
+        return { name: sanitizePdfText(l.name || ''), level: sanitizePdfText(l.level || 'Intermediário (B2)') };
+      })
       : [{ name: 'Português', level: 'Nativo' }, { name: 'Inglês', level: 'Intermediário (B2)' }],
     atsKeywords,
     matchScore: matchResult.score,
@@ -597,15 +598,13 @@ export async function testGeminiConnection(apiKey = '') {
   // 1. Descobrir os modelos oficiais de texto ativos nesta conta via ListModels
   const discoveredModels = await getAvailableGeminiModels(cleanKey);
 
-  // Fallbacks de modelos de texto comuns
+  // Fallbacks de modelos de texto modernos (Gemini 2.0 e 1.5 Flash)
   const fallbackCandidates = [
-    'gemini-1.5-flash-latest',
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-8b',
-    'gemini-2.0-flash-exp',
     'gemini-2.0-flash',
-    'gemini-pro',
-    'gemini-1.0-pro'
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-flash-8b',
+    'gemini-2.0-flash-exp'
   ];
 
   const modelsToTry = Array.from(new Set([...discoveredModels, ...fallbackCandidates]));
@@ -627,6 +626,8 @@ export async function testGeminiConnection(apiKey = '') {
           try {
             sessionStorage.setItem('working_gemini_model', model);
             sessionStorage.setItem('working_gemini_apiver', apiVer);
+            localStorage.setItem('working_gemini_model', model);
+            localStorage.setItem('working_gemini_api_ver', apiVer);
           } catch (e) { }
           return {
             success: true,
@@ -750,15 +751,20 @@ export async function testAiConnection({ provider = 'gemini', apiKey = '', model
  * Gera currículo sob medida utilizando OpenAI (ChatGPT / gpt-4o-mini / gpt-4o)
  */
 export async function generateTailoredResumeWithOpenAI(userProfile, job, apiKey = "", tone = 'balanced', model = 'gpt-4o-mini', targetLanguage = 'auto') {
-  const cleanKey = (apiKey || '').trim();
+  let cleanKey = (apiKey || '').trim();
+  if (!cleanKey) {
+    try {
+      cleanKey = (loadAiSettings()?.apiKey || '').trim();
+    } catch (e) { }
+  }
   const localBase = generateTailoredResume(userProfile, job, tone, targetLanguage);
-  if (!cleanKey) return localBase;
+  if (!cleanKey) return { ...localBase, isRealAI: false, aiError: 'Chave da OpenAI não configurada.' };
 
   const prompt = buildResumePrompt(userProfile, job, tone, targetLanguage);
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 7500);
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -783,7 +789,7 @@ export async function generateTailoredResumeWithOpenAI(userProfile, job, apiKey 
           }
         ],
         temperature: 0.2,
-        max_tokens: 850
+        max_tokens: 2500
       })
     });
     clearTimeout(timeoutId);
@@ -796,14 +802,20 @@ export async function generateTailoredResumeWithOpenAI(userProfile, job, apiKey 
         ...localBase,
         isRealAI: false,
         isRateLimited: isQuotaErr,
-        aiError: isQuotaErr 
-          ? 'Limite da OpenAI atingido (429 Rate Limit / Quota). Gerando instantaneamente com o motor ATS local.' 
+        aiError: isQuotaErr
+          ? 'Limite da OpenAI atingido (429 Rate Limit / Quota). Gerando instantaneamente com o motor ATS local.'
           : `OpenAI: ${errMsg}`
       };
     }
 
     const data = await res.json();
-    const rawContent = data.choices?.[0]?.message?.content || '{}';
+    let rawContent = (data.choices?.[0]?.message?.content || '{}').trim();
+    if (rawContent.startsWith('```json')) {
+      rawContent = rawContent.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+    } else if (rawContent.startsWith('```')) {
+      rawContent = rawContent.replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
+    }
+
     let parsed = null;
     try {
       parsed = JSON.parse(rawContent);
@@ -812,7 +824,7 @@ export async function generateTailoredResumeWithOpenAI(userProfile, job, apiKey 
       if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
     }
 
-    if (!parsed) return localBase;
+    if (!parsed) return { ...localBase, isRealAI: false, aiError: 'Falha ao interpretar resposta da OpenAI.' };
 
     // Registra métricas de uso
     recordAiRequest('openai', data.usage?.total_tokens || 1100);
@@ -901,12 +913,12 @@ CANDIDATE'S REAL PROFILE:
 - Verified Skills: ${JSON.stringify(userProfile.skills || [])}
 - Education: ${JSON.stringify(userProfile.education || [])}
 - Real Experiences: ${JSON.stringify((userProfile.experiences || []).map(e => ({
-    id: e.id,
-    role: e.role,
-    company: cleanCompanyName(e.company) || e.company,
-    period: e.period,
-    originalDescription: e.description
-  })), null, 2)}
+      id: e.id,
+      role: e.role,
+      company: cleanCompanyName(e.company) || e.company,
+      period: e.period,
+      originalDescription: e.description
+    })), null, 2)}
 
 Desired Tone: ${tone === 'tech' ? 'Technical deep-dive on stack and architecture' : tone === 'impact' ? 'Business results, delivery speed, and process optimization' : 'Balanced, clean, modern, and natural'}
 
@@ -1006,10 +1018,19 @@ Retorne APENAS um objeto JSON válido no seguinte formato:
 }
 
 export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "", tone = 'balanced', provider = 'auto', targetLanguage = 'auto') {
-  const cleanKey = (apiKey || '').trim();
+  let cleanKey = (apiKey || '').trim();
+  if (!cleanKey) {
+    try {
+      cleanKey = (loadAiSettings()?.apiKey || '').trim();
+    } catch (e) { }
+  }
   const localBase = generateTailoredResume(userProfile, job, tone, targetLanguage);
   if (!cleanKey) {
-    return localBase;
+    return {
+      ...localBase,
+      isRealAI: false,
+      aiError: 'Chave de API não configurada. Salve sua chave do Google Gemini nas configurações.'
+    };
   }
 
   const effectiveProvider = provider === 'openai' || cleanKey.startsWith('sk-') ? 'openai' : 'gemini';
@@ -1021,10 +1042,8 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
 
   // 1. Prioriza modelo já confirmado como funcional e os modelos Flash mais rápidos da Google (Gemini 2.0 Flash / 1.5 Flash)
   let cachedModel = null;
-  let cachedApiVer = 'v1beta';
   try {
     cachedModel = localStorage.getItem('working_gemini_model') || sessionStorage.getItem('working_gemini_model');
-    cachedApiVer = localStorage.getItem('working_gemini_api_ver') || 'v1beta';
   } catch (e) { }
 
   const priorityFastModels = [
@@ -1032,21 +1051,31 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
     'gemini-2.0-flash',
     'gemini-1.5-flash',
     'gemini-2.0-flash-exp',
-    'gemini-1.5-flash-latest',
-    'gemini-1.5-flash-8b'
+    'gemini-1.5-flash-latest'
   ].filter(Boolean);
 
   const modelsToTry = Array.from(new Set(priorityFastModels));
   let lastError = null;
   let isQuotaExceeded = false;
 
-  // Tentativa direta com modelos rápidos, timeout ágil e modo JSON nativo
+  // Tentativa com modelos rápidos, timeout de 25s e modo JSON nativo (v1beta)
   for (const model of modelsToTry) {
-    const apiVersions = (model === cachedModel && cachedApiVer) ? [cachedApiVer, 'v1beta', 'v1'] : ['v1beta', 'v1'];
-    for (const apiVer of Array.from(new Set(apiVersions))) {
+    const apiVersions = ['v1beta', 'v1'];
+    for (const apiVer of apiVersions) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6500);
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+        const generationConfig = {
+          temperature: 0.2,
+          maxOutputTokens: 2500
+        };
+        // responseMimeType é suportado nativamente na v1beta
+        if (apiVer === 'v1beta') {
+          generationConfig.responseMimeType = "application/json";
+        }
+
+        console.log(`[vagasATS AI] Gerando currículo sob medida com ${model} (${apiVer})...`);
 
         const res = await fetch(`https://generativelanguage.googleapis.com/${apiVer}/models/${model}:generateContent?key=${cleanKey}`, {
           method: "POST",
@@ -1054,11 +1083,7 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.2,
-              responseMimeType: "application/json",
-              maxOutputTokens: 900
-            }
+            generationConfig
           })
         });
         clearTimeout(timeoutId);
@@ -1078,25 +1103,37 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
         }
 
         const data = await res.json();
-        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        rawText = rawText.trim();
+
+        // Limpeza de cercas de código markdown ```json ... ``` se o modelo retornar
+        if (rawText.startsWith('```json')) {
+          rawText = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+        } else if (rawText.startsWith('```')) {
+          rawText = rawText.replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
+        }
 
         let parsed = null;
         try {
           parsed = JSON.parse(rawText);
         } catch (e) {
           const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-          if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+          if (jsonMatch) {
+            try {
+              parsed = JSON.parse(jsonMatch[0]);
+            } catch (e2) { }
+          }
         }
 
-        if (parsed) {
+        if (parsed && (parsed.tailoredSummary || parsed.experiences)) {
+          console.log(`[vagasATS AI] Currículo gerado com sucesso por ${model}!`);
           try {
             localStorage.setItem('working_gemini_model', model);
-            localStorage.setItem('working_gemini_api_ver', apiVer);
             sessionStorage.setItem('working_gemini_model', model);
           } catch (e) { }
 
           // Registra a requisição e tokens no tracker de cota
-          recordAiRequest('gemini', 1100);
+          recordAiRequest('gemini', 1500);
 
           let cleanSummary = (parsed.tailoredSummary || localBase.tailoredSummary || '').trim();
           cleanSummary = cleanSummary.replace(/^binho\b\s*/i, 'Alinhado a ');
@@ -1132,11 +1169,12 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
               ? parsed.crossMatchHighlights
               : localBase.crossMatchHighlights).map(sanitizePdfText),
             isRealAI: true,
-            aiModel: model
+            aiModel: `Google ${model}`
           };
         }
       } catch (e) {
-        lastError = e.message;
+        lastError = e.name === 'AbortError' ? 'Tempo de resposta esgotado (timeout 25s)' : e.message;
+        console.warn(`[vagasATS AI] Falha ao testar ${model} (${apiVer}):`, lastError);
         if (isQuotaExceeded) break;
       }
     }
@@ -1150,7 +1188,7 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
     isRateLimited: isQuotaExceeded,
     aiError: isQuotaExceeded
       ? 'Limite de cota atingido no Google Gemini (15 req/min ou 1.500/dia). O currículo foi gerado instantaneamente pelo motor ATS local.'
-      : (lastError || 'Falha ao contatar API de IA. Usando motor ATS local.')
+      : (lastError ? `Falha ao conectar com IA (${lastError}). Exibindo versão base estruturada.` : 'Falha ao contatar API de IA. Usando motor ATS local.')
   };
 }
 
@@ -1195,7 +1233,12 @@ ${userProfile.linkedin}`;
 }
 
 export async function generateCoverLetterWithLLM(userProfile, job, apiKey = "", targetLanguage = 'auto', tone = 'balanced') {
-  const cleanKey = (apiKey || '').trim();
+  let cleanKey = (apiKey || '').trim();
+  if (!cleanKey) {
+    try {
+      cleanKey = (loadAiSettings()?.apiKey || '').trim();
+    } catch (e) { }
+  }
   const fallback = generateCoverLetter(userProfile, job, targetLanguage);
   if (!cleanKey) {
     return { text: fallback, isRealAI: false };
@@ -1248,7 +1291,7 @@ DADOS REAIS DO CANDIDATO:
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           temperature: 0.35,
-          max_tokens: 850,
+          max_tokens: 1200,
           messages: [
             { role: 'system', content: 'Você é um redator profissional de cartas de apresentação para tecnologia.' },
             { role: 'user', content: prompt }
@@ -1271,11 +1314,9 @@ DADOS REAIS DO CANDIDATO:
 
   // Google Gemini (testa modelos flash rápidos)
   let cachedModel = null;
-  let cachedApiVer = 'v1beta';
   try {
     cachedModel = localStorage.getItem('working_gemini_model') || sessionStorage.getItem('working_gemini_model');
-    cachedApiVer = localStorage.getItem('working_gemini_api_ver') || 'v1beta';
-  } catch (e) {}
+  } catch (e) { }
 
   const modelsToTry = Array.from(new Set([
     cachedModel,
@@ -1286,11 +1327,10 @@ DADOS REAIS DO CANDIDATO:
   ].filter(Boolean)));
 
   for (const model of modelsToTry) {
-    const apiVersions = (model === cachedModel && cachedApiVer) ? [cachedApiVer, 'v1beta', 'v1'] : ['v1beta', 'v1'];
-    for (const apiVer of Array.from(new Set(apiVersions))) {
+    for (const apiVer of ['v1beta', 'v1']) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 7000);
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
 
         const res = await fetch(`https://generativelanguage.googleapis.com/${apiVer}/models/${model}:generateContent?key=${cleanKey}`, {
           method: "POST",
@@ -1300,7 +1340,7 @@ DADOS REAIS DO CANDIDATO:
             contents: [{ parts: [{ text: prompt }] }],
             generationConfig: {
               temperature: 0.35,
-              maxOutputTokens: 900
+              maxOutputTokens: 1500
             }
           })
         });
@@ -1911,7 +1951,7 @@ async function fetchGitHubRepoIssues({ repo, source, query = '' }) {
       if (res.ok) {
         issues = await res.json();
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // 2. Fallback resiliente direto para API pública do GitHub (CORS liberado no navegador)
     if (!Array.isArray(issues) || issues.length === 0) {
@@ -1925,113 +1965,113 @@ async function fetchGitHubRepoIssues({ repo, source, query = '' }) {
         if (directRes.ok) {
           issues = await directRes.json();
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (!Array.isArray(issues)) return [];
 
-  const q = query.toLowerCase().trim();
-  const shortTechTokens = ['ti', 'qa', 'go', 'ui', 'c#', 'ai', 'ia', 'bi', 'db', 'os'];
+    const q = query.toLowerCase().trim();
+    const shortTechTokens = ['ti', 'qa', 'go', 'ui', 'c#', 'ai', 'ia', 'bi', 'db', 'os'];
 
-  return issues
-    .filter(i => !i.pull_request)
-    .filter(i => {
-      if (!q) return true;
-      const haystack = `${i.title} ${(i.labels || []).map(l => l.name || '').join(' ')} ${i.body || ''}`.toLowerCase();
-      return q.split(/\s+/).some(token => {
-        if (token.length > 2 || shortTechTokens.includes(token)) {
-          return haystack.includes(token);
-        }
-        return false;
-      });
-    })
-    .map(i => {
-      const body = i.body || '';
-      const plainDescription = stripHtml(body);
-      const labels = (i.labels || []).map(l => (typeof l === 'string' ? l : l.name || ''));
-      const fullText = `${i.title} ${labels.join(' ')} ${plainDescription}`;
+    return issues
+      .filter(i => !i.pull_request)
+      .filter(i => {
+        if (!q) return true;
+        const haystack = `${i.title} ${(i.labels || []).map(l => l.name || '').join(' ')} ${i.body || ''}`.toLowerCase();
+        return q.split(/\s+/).some(token => {
+          if (token.length > 2 || shortTechTokens.includes(token)) {
+            return haystack.includes(token);
+          }
+          return false;
+        });
+      })
+      .map(i => {
+        const body = i.body || '';
+        const plainDescription = stripHtml(body);
+        const labels = (i.labels || []).map(l => (typeof l === 'string' ? l : l.name || ''));
+        const fullText = `${i.title} ${labels.join(' ')} ${plainDescription}`;
 
-      // Limpar título removendo prefixos entre colchetes como [Remoto], [São Paulo/SP]
-      let cleanTitle = i.title.replace(/^\[[^\]]+\]\s*/, '').trim();
+        // Limpar título removendo prefixos entre colchetes como [Remoto], [São Paulo/SP]
+        let cleanTitle = i.title.replace(/^\[[^\]]+\]\s*/, '').trim();
 
-      // Extrair nome da empresa quando presente no título
-      let company = 'Empresa Brasileira';
-      const atMatch = cleanTitle.match(/\s+(?:na|no|at|@)\s+([A-Za-z0-9\s\-&.]+)/i);
-      if (atMatch) {
-        company = atMatch[1].trim();
-        cleanTitle = cleanTitle.replace(atMatch[0], '').trim();
-      } else {
-        const parenMatch = cleanTitle.match(/\s*\(([A-Za-z0-9\s\-&.]+)\)\s*$/);
-        if (parenMatch) {
-          company = parenMatch[1].trim();
-          cleanTitle = cleanTitle.replace(parenMatch[0], '').trim();
+        // Extrair nome da empresa quando presente no título
+        let company = 'Empresa Brasileira';
+        const atMatch = cleanTitle.match(/\s+(?:na|no|at|@)\s+([A-Za-z0-9\s\-&.]+)/i);
+        if (atMatch) {
+          company = atMatch[1].trim();
+          cleanTitle = cleanTitle.replace(atMatch[0], '').trim();
         } else {
-          const dashMatch = cleanTitle.match(/\s+-\s+(?!end\b)([A-Za-z0-9\s&.]+)\s*$/i);
-          if (dashMatch) {
-            company = dashMatch[1].trim();
-            cleanTitle = cleanTitle.replace(dashMatch[0], '').trim();
-          } else if (i.user?.login) {
-            company = i.user.login;
+          const parenMatch = cleanTitle.match(/\s*\(([A-Za-z0-9\s\-&.]+)\)\s*$/);
+          if (parenMatch) {
+            company = parenMatch[1].trim();
+            cleanTitle = cleanTitle.replace(parenMatch[0], '').trim();
+          } else {
+            const dashMatch = cleanTitle.match(/\s+-\s+(?!end\b)([A-Za-z0-9\s&.]+)\s*$/i);
+            if (dashMatch) {
+              company = dashMatch[1].trim();
+              cleanTitle = cleanTitle.replace(dashMatch[0], '').trim();
+            } else if (i.user?.login) {
+              company = i.user.login;
+            }
           }
         }
-      }
 
-      // Modalidade e Localização
-      const isRemote = /remoto|remote/i.test(i.title) || labels.some(l => /remoto/i.test(l));
-      const isHybrid = /híbrido|hibrido|hybrid/i.test(i.title) || labels.some(l => /híbrido|hibrido/i.test(l));
-      const workType = isRemote ? 'Remoto' : (isHybrid ? 'Híbrido' : 'Presencial');
-      const location = isRemote ? 'Brasil (100% Remoto)' : (isHybrid ? 'São Paulo / Híbrido' : 'Brasil (Presencial)');
+        // Modalidade e Localização
+        const isRemote = /remoto|remote/i.test(i.title) || labels.some(l => /remoto/i.test(l));
+        const isHybrid = /híbrido|hibrido|hybrid/i.test(i.title) || labels.some(l => /híbrido|hibrido/i.test(l));
+        const workType = isRemote ? 'Remoto' : (isHybrid ? 'Híbrido' : 'Presencial');
+        const location = isRemote ? 'Brasil (100% Remoto)' : (isHybrid ? 'São Paulo / Híbrido' : 'Brasil (Presencial)');
 
-      // Senioridade
-      let level = 'Pleno';
-      if (/(junior|júnior|\bjr\b|estágio|estagio|trainee|intern|iniciante|aprendiz|assistente|\bi\b)/i.test(i.title) || labels.some(l => /junior|júnior|jr|estágio|estagio|trainee|iniciante/i.test(l))) {
-        level = 'Júnior';
-      } else if (/(senior|sênior|\bsr\b|tech lead|lead|staff|\biii\b)/i.test(i.title) || labels.some(l => /senior|sênior|sr/i.test(l))) {
-        level = 'Sênior';
-      } else if (/(especialista|architect|principal|diretor|head)/i.test(i.title) || labels.some(l => /especialista|specialist/i.test(l))) {
-        level = 'Especialista';
-      } else {
-        level = inferLevel(cleanTitle, plainDescription);
-      }
+        // Senioridade
+        let level = 'Pleno';
+        if (/(junior|júnior|\bjr\b|estágio|estagio|trainee|intern|iniciante|aprendiz|assistente|\bi\b)/i.test(i.title) || labels.some(l => /junior|júnior|jr|estágio|estagio|trainee|iniciante/i.test(l))) {
+          level = 'Júnior';
+        } else if (/(senior|sênior|\bsr\b|tech lead|lead|staff|\biii\b)/i.test(i.title) || labels.some(l => /senior|sênior|sr/i.test(l))) {
+          level = 'Sênior';
+        } else if (/(especialista|architect|principal|diretor|head)/i.test(i.title) || labels.some(l => /especialista|specialist/i.test(l))) {
+          level = 'Especialista';
+        } else {
+          level = inferLevel(cleanTitle, plainDescription);
+        }
 
-      // Link direto de candidatura dentro da descrição ou na issue
-      const applyMatch = body.match(/(?:candidat(?:ar|e)|inscri[çc][ãa]o|link|apply)[^\n]*?(https?:\/\/[^\s\)\],>]+)/i)
-        || body.match(/https?:\/\/(?:[a-z0-9\-]+\.)?(?:gupy\.io|greenhouse\.io|lever\.co|workable\.com|vagas\.com|kenoby\.com|forms\.gle|coodesh\.com)[^\s\)\],>]+/i)
-        || body.match(/https?:\/\/[^\s\)\],>]+/);
-      const applyUrl = applyMatch ? (applyMatch[1] || applyMatch[0]) : i.html_url;
+        // Link direto de candidatura dentro da descrição ou na issue
+        const applyMatch = body.match(/(?:candidat(?:ar|e)|inscri[çc][ãa]o|link|apply)[^\n]*?(https?:\/\/[^\s\)\],>]+)/i)
+          || body.match(/https?:\/\/(?:[a-z0-9\-]+\.)?(?:gupy\.io|greenhouse\.io|lever\.co|workable\.com|vagas\.com|kenoby\.com|forms\.gle|coodesh\.com)[^\s\)\],>]+/i)
+          || body.match(/https?:\/\/[^\s\)\],>]+/);
+        const applyUrl = applyMatch ? (applyMatch[1] || applyMatch[0]) : i.html_url;
 
-      // Tags técnicas
-      const tags = [...new Set([...labels, ...extractTechTags(fullText)])].filter(
-        t => t.length > 1 && !/remoto|clt|pj|pleno|sênior|junior|híbrido/i.test(t)
-      );
+        // Tags técnicas
+        const tags = [...new Set([...labels, ...extractTechTags(fullText)])].filter(
+          t => t.length > 1 && !/remoto|clt|pj|pleno|sênior|junior|híbrido/i.test(t)
+        );
 
-      // Recência inteligente baseada na data de criação ou última interação/atualização ativa
-      const effectiveHoursAgo = Math.min(
-        hoursSince(i.created_at),
-        hoursSince(i.updated_at || i.created_at)
-      );
+        // Recência inteligente baseada na data de criação ou última interação/atualização ativa
+        const effectiveHoursAgo = Math.min(
+          hoursSince(i.created_at),
+          hoursSince(i.updated_at || i.created_at)
+        );
 
-      return {
-        id: `gh-${repo.replace('/', '-')}-${i.number}`,
-        isReal: true,
-        isBrazilFriendly: true,
-        title: cleanTitle || i.title,
-        company: cleanCompanyName(company) || 'Empresa Tecnologia',
-        companyLogo: i.user?.avatar_url || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=100&auto=format&fit=crop&q=80',
-        location,
-        workType,
-        level,
-        salary: labels.find(l => /pj|clt|r\$/i.test(l)) || 'A combinar (CLT/PJ)',
-        publishedDate: i.created_at,
-        updatedDate: i.updated_at,
-        postedHoursAgo: effectiveHoursAgo,
-        source,
-        url: applyUrl,
-        requirements: tags.slice(0, 8),
-        description: plainDescription,
-        benefits: []
-      };
-    });
+        return {
+          id: `gh-${repo.replace('/', '-')}-${i.number}`,
+          isReal: true,
+          isBrazilFriendly: true,
+          title: cleanTitle || i.title,
+          company: cleanCompanyName(company) || 'Empresa Tecnologia',
+          companyLogo: i.user?.avatar_url || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=100&auto=format&fit=crop&q=80',
+          location,
+          workType,
+          level,
+          salary: labels.find(l => /pj|clt|r\$/i.test(l)) || 'A combinar (CLT/PJ)',
+          publishedDate: i.created_at,
+          updatedDate: i.updated_at,
+          postedHoursAgo: effectiveHoursAgo,
+          source,
+          url: applyUrl,
+          requirements: tags.slice(0, 8),
+          description: plainDescription,
+          benefits: []
+        };
+      });
   } catch (err) {
     console.warn(`Erro ao consultar ${source}:`, err.message);
     return [];
@@ -2191,12 +2231,12 @@ export async function fetchRealJobs(options = {}) {
  * Analisa qualquer vaga a partir de um link (Gupy, LinkedIn, Vagas.com, etc) ou texto manual
  * e prepara a estrutura completa para cálculo de Match e Currículo sob medida com normas ATS.
  */
-export async function analyzeJobFromUrlOrText({ 
-  url = '', 
-  platform = '', 
-  rawText = '', 
-  customTitle = '', 
-  customCompany = '' 
+export async function analyzeJobFromUrlOrText({
+  url = '',
+  platform = '',
+  rawText = '',
+  customTitle = '',
+  customCompany = ''
 }) {
   let title = customTitle.trim();
   let company = customCompany.trim();
@@ -2260,8 +2300,8 @@ export async function analyzeJobFromUrlOrText({
   }
 
   if (!company) {
-    company = platform && platform !== 'Qualquer Plataforma' 
-      ? `Empresa via ${platform}` 
+    company = platform && platform !== 'Qualquer Plataforma'
+      ? `Empresa via ${platform}`
       : (targetUrl.includes('gupy') ? 'Empresa Gupy' : targetUrl.includes('vagas') ? 'Empresa Vagas.com' : 'Empresa Contratante');
   }
 
@@ -2294,7 +2334,3 @@ export async function analyzeJobFromUrlOrText({
     benefits: []
   };
 }
-
-
-
-
