@@ -1040,7 +1040,7 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
 
   const prompt = buildResumePrompt(userProfile, job, tone, targetLanguage);
 
-  // 1. Prioriza modelo já confirmado como funcional e os modelos Flash mais rápidos da Google (Gemini 2.0 Flash / 1.5 Flash)
+  // 1. Prioriza modelo já confirmado como funcional e os modelos Flash mais rápidos da Google (Gemini 1.5 Flash / 2.0 Flash)
   let cachedModel = null;
   try {
     cachedModel = localStorage.getItem('working_gemini_model') || sessionStorage.getItem('working_gemini_model');
@@ -1048,10 +1048,10 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
 
   const priorityFastModels = [
     cachedModel,
-    'gemini-2.0-flash',
     'gemini-1.5-flash',
-    'gemini-2.0-flash-exp',
-    'gemini-1.5-flash-latest'
+    'gemini-2.0-flash',
+    'gemini-1.5-flash-latest',
+    'gemini-2.0-flash-exp'
   ].filter(Boolean);
 
   const modelsToTry = Array.from(new Set(priorityFastModels));
@@ -1068,7 +1068,7 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
 
         const generationConfig = {
           temperature: 0.2,
-          maxOutputTokens: 2500
+          maxOutputTokens: 4096
         };
         // responseMimeType é suportado nativamente na v1beta
         if (apiVer === 'v1beta') {
@@ -1090,7 +1090,7 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
 
         if (res.status === 429) {
           isQuotaExceeded = true;
-          throw new Error('QUOTA_429: Limite de requisições do Google Gemini atingido (15 RPM ou 1.500/dia).');
+          throw new Error('Limite de requisições do Google Gemini atingido (15 RPM ou 1.500/dia no plano gratuito). Aguarde 1 minuto.');
         }
 
         if (!res.ok) {
@@ -1103,29 +1103,45 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
         }
 
         const data = await res.json();
-        let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (data.promptFeedback?.blockReason) {
+          throw new Error(`Google Safety: Bloqueado por ${data.promptFeedback.blockReason}`);
+        }
+
+        const candidate = data.candidates?.[0];
+        let rawText = candidate?.content?.parts?.[0]?.text || "";
         rawText = rawText.trim();
 
+        if (!rawText) {
+          const finishReason = candidate?.finishReason;
+          throw new Error(finishReason ? `Google finalizou com motivo: ${finishReason}` : 'Resposta vazia da API do Google');
+        }
+
         // Limpeza de cercas de código markdown ```json ... ``` se o modelo retornar
-        if (rawText.startsWith('```json')) {
-          rawText = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+        const codeBlockMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+        if (codeBlockMatch) {
+          rawText = codeBlockMatch[1].trim();
         } else if (rawText.startsWith('```')) {
-          rawText = rawText.replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
+          rawText = rawText.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/, '').trim();
         }
 
         let parsed = null;
         try {
           parsed = JSON.parse(rawText);
         } catch (e) {
-          const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
+          const firstBrace = rawText.indexOf('{');
+          const lastBrace = rawText.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
             try {
-              parsed = JSON.parse(jsonMatch[0]);
+              parsed = JSON.parse(rawText.substring(firstBrace, lastBrace + 1));
             } catch (e2) { }
           }
         }
 
-        if (parsed && (parsed.tailoredSummary || parsed.experiences)) {
+        if (!parsed) {
+          throw new Error('A IA respondeu, mas o formato JSON do currículo veio truncado ou inválido.');
+        }
+
+        if (parsed.tailoredSummary || parsed.experiences) {
           console.log(`[vagasATS AI] Currículo gerado com sucesso por ${model}!`);
           try {
             localStorage.setItem('working_gemini_model', model);
@@ -1133,7 +1149,7 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
           } catch (e) { }
 
           // Registra a requisição e tokens no tracker de cota
-          recordAiRequest('gemini', 1500);
+          recordAiRequest('gemini', 1800);
 
           let cleanSummary = (parsed.tailoredSummary || localBase.tailoredSummary || '').trim();
           cleanSummary = cleanSummary.replace(/^binho\b\s*/i, 'Alinhado a ');

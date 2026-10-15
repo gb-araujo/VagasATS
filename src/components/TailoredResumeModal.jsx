@@ -58,6 +58,7 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
   // Inline edit mode & feedback
   const [isEditing, setIsEditing] = useState(false);
   const [editToast, setEditToast] = useState('');
+  const [lastAiError, setLastAiError] = useState('');
 
   // Cover Letter state (editable & AI-generated)
   const [coverLetterText, setCoverLetterText] = useState(() => job ? generateCoverLetter(userProfile, job, detectJobLanguage(job)) : '');
@@ -74,13 +75,16 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
       if (res.success) {
         setConnectionStatus('connected');
         setConnectionFeedback(`Conectado! ${res.model} operacional (${res.latencyMs}ms).`);
+        setLastAiError('');
       } else {
         setConnectionStatus('disconnected');
         setConnectionFeedback(res.message);
+        setLastAiError(res.message);
       }
     } catch (e) {
       setConnectionStatus('disconnected');
       setConnectionFeedback(`Falha: ${e.message}`);
+      setLastAiError(`Falha: ${e.message}`);
     } finally {
       setIsTestingConnection(false);
     }
@@ -128,14 +132,15 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
         setInitialAiResume(result);
         if (result.isRealAI) {
           setConnectionStatus('connected');
+          setLastAiError('');
           setEditToast(`Currículo gerado com sucesso pelo modelo ${result.aiModel || 'Gemini Flash'}!`);
           setTimeout(() => setEditToast(''), 4500);
         } else {
           setConnectionStatus('disconnected');
-          if (result.aiError) {
-            setEditToast(`Aviso: ${result.aiError}`);
-            setTimeout(() => setEditToast(''), 6000);
-          }
+          const errMsg = result.aiError || 'Falha ao contatar a API de IA. Exibindo versão base estruturada.';
+          setLastAiError(errMsg);
+          setEditToast(`Aviso: ${errMsg}`);
+          setTimeout(() => setEditToast(''), 8000);
         }
       }
 
@@ -419,15 +424,25 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
                   IA Conectada ({resumeData.aiModel || 'Gemini Flash'})
                 </span>
               ) : connectionStatus === 'disconnected' ? (
-                <span className="text-xs text-rose-600 dark:text-rose-300 font-bold flex items-center gap-1 bg-rose-500/15 border border-rose-500/30 px-2.5 py-0.5 rounded-full">
+                <button
+                  type="button"
+                  onClick={() => setShowKeyDrawer(true)}
+                  className="text-xs text-rose-600 dark:text-rose-300 font-bold flex items-center gap-1.5 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 px-2.5 py-0.5 rounded-full cursor-pointer transition-all"
+                  title="IA Desconectada. Clique aqui para abrir a configuração da chave e diagnosticar."
+                >
                   <WifiOff className="w-3.5 h-3.5 text-rose-500" />
-                  IA Desconectada
-                </span>
+                  <span>IA Desconectada (Clique para Conectar)</span>
+                </button>
               ) : (
-                <span className="text-xs text-blue-600 dark:text-blue-300 font-semibold flex items-center gap-1 bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded-full">
+                <button
+                  type="button"
+                  onClick={() => setShowKeyDrawer(true)}
+                  className="text-xs text-blue-600 dark:text-blue-300 font-semibold flex items-center gap-1 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 px-2 py-0.5 rounded-full cursor-pointer transition-all"
+                  title="Motor semântico ativo. Clique para conectar Google Gemini."
+                >
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  Motor Semântico Ativo
-                </span>
+                  <span>Motor Semântico Ativo</span>
+                </button>
               )}
 
 
@@ -585,6 +600,28 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
 
           {activeTab === 'resume' ? (
             <>
+              {/* Alerta de Diagnóstico quando IA não estiver conectada */}
+              {(!resumeData.isRealAI || connectionStatus === 'disconnected') && (
+                <div className="bg-amber-500/10 border border-amber-500/30 p-3.5 rounded-xl text-xs space-y-1.5 animate-fade-in">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2 font-bold text-amber-700 dark:text-amber-300">
+                      <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                      <span>Exibindo versão base estruturada (Motor ATS Local)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowKeyDrawer(true)}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-lg transition-all shadow cursor-pointer text-xs"
+                    >
+                      {apiKey ? 'Testar / Trocar Chave IA' : 'Inserir Chave do Google Gemini'}
+                    </button>
+                  </div>
+                  <p className="text-[var(--text-muted)] text-[11px] leading-relaxed">
+                    <strong>Diagnóstico da IA:</strong> {lastAiError || resumeData.aiError || (apiKey ? 'O motor ATS local gerou o currículo base. Clique em Reanalisar com IA para gerar via Google Gemini.' : 'Nenhuma chave de API configurada neste navegador. Para personalização profunda e única via Google Gemini, conecte sua chave gratuita.')}
+                  </p>
+                </div>
+              )}
+
               {/* AI Controls Toolbar */}
               <div className="bg-[var(--bg-subtle)] border border-[var(--border-subtle)] p-4 rounded-xl space-y-3">
                 <div className="flex items-center justify-between flex-wrap gap-3">
