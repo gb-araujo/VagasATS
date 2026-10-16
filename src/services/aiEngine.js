@@ -544,14 +544,24 @@ export async function getAvailableGeminiModels(apiKey = '') {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.models)) {
-          // Filtrar ESTRITAMENTE modelos de geração de TEXTO (rejeitar TTS, áudio, embeddings, imagem e -exp descontinuados)
+          // Filtrar ESTRITAMENTE modelos oficiais da família Gemini (rejeitar gemma, bison, TTS, áudio, embeddings, imagem e -exp)
           const textModels = data.models
             .filter(m => {
               if (!Array.isArray(m.supportedGenerationMethods) || !m.supportedGenerationMethods.includes('generateContent')) {
                 return false;
               }
               const name = m.name.toLowerCase();
-              if (name.includes('tts') || name.includes('audio') || name.includes('embed') || name.includes('imagen') || name.includes('aqa') || name.includes('-exp')) {
+              if (
+                !name.includes('gemini') ||
+                name.includes('gemma') ||
+                name.includes('bison') ||
+                name.includes('tts') ||
+                name.includes('audio') ||
+                name.includes('embed') ||
+                name.includes('imagen') ||
+                name.includes('aqa') ||
+                name.includes('-exp')
+              ) {
                 return false;
               }
               return true;
@@ -561,15 +571,14 @@ export async function getAvailableGeminiModels(apiKey = '') {
           if (textModels.length > 0) {
             // Priorizar os modelos estáveis mais rápidos para texto
             const sorted = [
-              textModels.find(m => m === 'gemini-2.5-flash'),
               textModels.find(m => m === 'gemini-2.0-flash'),
-              textModels.find(m => m.includes('2.0-flash')),
+              textModels.find(m => m === 'gemini-1.5-flash-8b'),
               textModels.find(m => m === 'gemini-1.5-flash' || m === 'gemini-1.5-flash-latest'),
-              textModels.find(m => m.includes('1.5-flash') && !m.includes('8b')),
-              textModels.find(m => m.includes('1.5-flash-8b')),
+              textModels.find(m => m === 'gemini-2.5-flash'),
+              textModels.find(m => m.includes('2.0-flash')),
+              textModels.find(m => m.includes('1.5-flash')),
               textModels.find(m => m.includes('1.5-pro')),
-              textModels.find(m => m === 'gemini-pro'),
-              ...textModels
+              ...textModels.filter(m => m.startsWith('gemini'))
             ].filter(Boolean);
 
             return Array.from(new Set(sorted));
@@ -600,17 +609,15 @@ export async function testGeminiConnection(apiKey = '') {
   // 1. Descobrir os modelos oficiais de texto ativos nesta conta via ListModels
   const discoveredModels = await getAvailableGeminiModels(cleanKey);
 
-  // Fallbacks de modelos de texto modernos e estáveis (Gemini 2.5, 2.0 e 1.5 Flash)
+  // Fallbacks de modelos de texto ultra rápidos e estáveis (Gemini 2.0 Flash / 1.5 Flash 8b)
   const fallbackCandidates = [
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-latest',
-    'gemini-1.5-flash-8b'
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-flash'
   ];
 
   const modelsToTry = Array.from(new Set([...discoveredModels, ...fallbackCandidates]))
-    .filter(m => m && !m.includes('-exp'));
+    .filter(m => m && m.startsWith('gemini') && !m.includes('gemma') && !m.includes('-exp'));
   let lastError = null;
 
   for (const model of modelsToTry) {
@@ -623,6 +630,13 @@ export async function testGeminiConnection(apiKey = '') {
             contents: [{ parts: [{ text: 'Responda estritamente apenas a palavra: OK' }] }]
           })
         });
+
+        if (res.status === 429) {
+          return {
+            success: false,
+            message: 'Limite de requisições temporário atingido no Google Gemini (15 req/min no plano gratuito). Aguarde cerca de 1 minuto para o Google restabelecer sua cota.'
+          };
+        }
 
         if (res.ok) {
           const latencyMs = Date.now() - startTime;
@@ -637,7 +651,7 @@ export async function testGeminiConnection(apiKey = '') {
             model,
             apiVer,
             latencyMs,
-            message: `Conectado com sucesso! Google ${model} ativo e operacional (${latencyMs}ms).`
+            message: `Conectado! Google ${model} operacional (${latencyMs}ms).`
           };
         } else {
           const errJson = await res.json().catch(() => ({}));
@@ -650,7 +664,6 @@ export async function testGeminiConnection(apiKey = '') {
               message: `Chave inválida: ${errMsg}. Verifique se copiou a chave completa no Google AI Studio.`
             };
           }
-          // Caso seja erro específico do modelo (ex: áudio vs texto, 404 de versão), continua testando os próximos!
         }
       } catch (e) {
         lastError = e.message;
@@ -1043,71 +1056,59 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
 
   const prompt = buildResumePrompt(userProfile, job, tone, targetLanguage);
 
-  // 1. Prioriza modelo já confirmado como funcional e os modelos Flash mais rápidos da Google (Gemini 2.5 Flash / 2.0 Flash / 1.5 Flash)
+  // 1. Prioriza modelo já confirmado como funcional e os modelos Flash mais rápidos da Google (Gemini 2.0 Flash / 1.5 Flash 8B)
   let cachedModel = null;
   try {
     cachedModel = localStorage.getItem('working_gemini_model') || sessionStorage.getItem('working_gemini_model');
-    if (cachedModel && cachedModel.includes('-exp')) {
+    if (cachedModel && (!cachedModel.startsWith('gemini') || cachedModel.includes('gemma') || cachedModel.includes('-exp'))) {
       localStorage.removeItem('working_gemini_model');
       sessionStorage.removeItem('working_gemini_model');
       cachedModel = null;
     }
   } catch (e) { }
 
-  // Descobre modelos ativos da conta dinamicamente se não houver cache
-  let discoveredModels = [];
-  try {
-    discoveredModels = await getAvailableGeminiModels(cleanKey);
-  } catch (_) { }
-
   const priorityFastModels = [
     cachedModel,
-    ...discoveredModels,
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
+    'gemini-1.5-flash-8b',
     'gemini-1.5-flash',
-    'gemini-1.5-flash-latest',
-    'gemini-1.5-flash-8b'
-  ].filter(m => m && !m.includes('-exp'));
+    'gemini-2.5-flash'
+  ].filter(m => m && m.startsWith('gemini') && !m.includes('gemma') && !m.includes('-exp'));
 
   const modelsToTry = Array.from(new Set(priorityFastModels));
   let lastError = null;
   let isQuotaExceeded = false;
 
-  // Tentativa com modelos rápidos, timeout de 25s e modo JSON nativo (v1beta é o endpoint canônico)
+  // Tentativa com modelos rápidos, timeout de 20s e endpoint v1beta oficial
   for (const model of modelsToTry) {
-    const apiVersions = ['v1beta', 'v1'];
-    for (const apiVer of apiVersions) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-        const generationConfig = {
-          temperature: 0.2,
-          maxOutputTokens: 4096
-        };
-        // responseMimeType é suportado nativamente na v1beta
-        if (apiVer === 'v1beta') {
-          generationConfig.responseMimeType = "application/json";
-        }
+      const generationConfig = {
+        temperature: 0.2,
+        maxOutputTokens: 4096,
+        responseMimeType: "application/json"
+      };
 
-        console.log(`[vagasATS AI] Gerando currículo sob medida com ${model} (${apiVer})...`);
+      console.log(`[vagasATS AI] Gerando currículo sob medida com ${model}...`);
 
-        const res = await fetch(`https://generativelanguage.googleapis.com/${apiVer}/models/${model}:generateContent?key=${cleanKey}`, {
-          method: "POST",
-          signal: controller.signal,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig
-          })
-        });
-        clearTimeout(timeoutId);
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig
+        })
+      });
+      clearTimeout(timeoutId);
 
-        if (res.status === 429) {
-          isQuotaExceeded = true;
-          throw new Error('Limite de requisições do Google Gemini atingido (15 RPM ou 1.500/dia no plano gratuito). Aguarde 1 minuto.');
-        }
+      if (res.status === 429) {
+        isQuotaExceeded = true;
+        lastError = 'Limite de requisições temporário do Google Gemini atingido (15 RPM). Aguarde 1 minuto.';
+        break;
+      }
 
         if (!res.ok) {
           const errJson = await res.json().catch(() => ({}));
@@ -1212,13 +1213,11 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
           throw new Error('A IA respondeu, mas a estrutura retornada não contém os campos de resumo ou experiências.');
         }
       } catch (e) {
-        lastError = e.name === 'AbortError' ? 'Tempo de resposta esgotado (timeout 25s)' : e.message;
-        console.warn(`[vagasATS AI] Falha ao testar ${model} (${apiVer}):`, lastError);
+        lastError = e.name === 'AbortError' ? 'Tempo de resposta esgotado (timeout 20s)' : e.message;
+        console.warn(`[vagasATS AI] Falha ao testar ${model}:`, lastError);
         if (isQuotaExceeded) break;
       }
     }
-    if (isQuotaExceeded) break;
-  }
 
   // Se excedeu cota ou falhou, fallback instantâneo com o currículo ATS local otimizado
   return {
@@ -1355,60 +1354,55 @@ DADOS REAIS DO CANDIDATO:
   let cachedModel = null;
   try {
     cachedModel = localStorage.getItem('working_gemini_model') || sessionStorage.getItem('working_gemini_model');
-    if (cachedModel && cachedModel.includes('-exp')) {
+    if (cachedModel && (!cachedModel.startsWith('gemini') || cachedModel.includes('gemma') || cachedModel.includes('-exp'))) {
       cachedModel = null;
     }
   } catch (e) { }
 
-  let discoveredModels = [];
-  try {
-    discoveredModels = await getAvailableGeminiModels(cleanKey);
-  } catch (_) { }
-
   const modelsToTry = Array.from(new Set([
     cachedModel,
-    ...discoveredModels,
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-latest'
-  ].filter(m => m && !m.includes('-exp'))));
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-flash'
+  ].filter(m => m && m.startsWith('gemini') && !m.includes('gemma') && !m.includes('-exp'))));
 
   for (const model of modelsToTry) {
-    for (const apiVer of ['v1beta', 'v1']) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-        const res = await fetch(`https://generativelanguage.googleapis.com/${apiVer}/models/${model}:generateContent?key=${cleanKey}`, {
-          method: "POST",
-          signal: controller.signal,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.35,
-              maxOutputTokens: 1500
-            }
-          })
-        });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const data = await res.json();
-          const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          if (rawText && rawText.trim().length > 50) {
-            recordAiRequest('gemini', 1000);
-            return {
-              text: rawText.trim(),
-              isRealAI: true,
-              model
-            };
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.35,
+            maxOutputTokens: 1500
           }
-        }
-      } catch (e) {
-        // Tenta o próximo modelo
+        })
+      });
+      clearTimeout(timeoutId);
+
+      if (res.status === 429) {
+        break; // Não spamma outros modelos se cota estourou
       }
+
+      if (res.ok) {
+        const data = await res.json();
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (rawText && rawText.trim().length > 50) {
+          recordAiRequest('gemini', 1000);
+          return {
+            text: rawText.trim(),
+            isRealAI: true,
+            model
+          };
+        }
+      }
+    } catch (e) {
+      // Tenta o próximo modelo
     }
   }
 

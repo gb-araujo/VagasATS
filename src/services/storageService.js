@@ -159,10 +159,10 @@ export function clearCachedRealJobs() {
  */
 export function loadAiSettings() {
   try {
-    // Purge deprecated experimental models from cache
+    // Purge deprecated or slow models (Gemma, exp) from cache
     try {
       const working = localStorage.getItem('working_gemini_model');
-      if (working && working.includes('-exp')) {
+      if (working && (!working.startsWith('gemini') || working.includes('gemma') || working.includes('-exp'))) {
         localStorage.removeItem('working_gemini_model');
         localStorage.removeItem('working_gemini_api_ver');
       }

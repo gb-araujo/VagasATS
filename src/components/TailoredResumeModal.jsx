@@ -117,40 +117,38 @@ export default function TailoredResumeModal({ job, userProfile, onClose }) {
     }, 550);
 
     try {
-      // Gera simultaneamente com IA o currículo sob medida e a carta de apresentação
-      const [resumePromise, coverPromise] = await Promise.allSettled([
-        generateTailoredResumeWithLLM(userProfile, job, keyToUse, selectedTone, 'auto', langToUse),
-        generateCoverLetterWithLLM(userProfile, job, keyToUse, langToUse, selectedTone)
-      ]);
+      // 1. Gera com prioridade máxima o currículo sob medida (rápido e sem concorrência de tokens)
+      const result = await generateTailoredResumeWithLLM(userProfile, job, keyToUse, selectedTone, 'auto', langToUse);
 
       clearTimeout(timer1);
       clearTimeout(timer2);
 
-      if (resumePromise.status === 'fulfilled') {
-        const result = resumePromise.value;
-        setResumeData(result);
-        setInitialAiResume(result);
-        if (result.isRealAI) {
-          setConnectionStatus('connected');
-          setLastAiError('');
-          setEditToast(`Currículo gerado com sucesso pelo modelo ${result.aiModel || 'Gemini Flash'}!`);
-          setTimeout(() => setEditToast(''), 4500);
-        } else {
-          setConnectionStatus('disconnected');
-          const errMsg = result.aiError || 'Falha ao contatar a API de IA. Exibindo versão base estruturada.';
-          setLastAiError(errMsg);
-          setEditToast(`Aviso: ${errMsg}`);
-          setTimeout(() => setEditToast(''), 8000);
-        }
-      }
+      setResumeData(result);
+      setInitialAiResume(result);
+      if (result.isRealAI) {
+        setConnectionStatus('connected');
+        setLastAiError('');
+        setEditToast(`Currículo gerado com sucesso pelo modelo ${result.aiModel || 'Gemini Flash'}!`);
+        setTimeout(() => setEditToast(''), 4500);
 
-      if (coverPromise.status === 'fulfilled') {
-        const coverRes = coverPromise.value;
-        if (coverRes && coverRes.text) {
-          setCoverLetterText(coverRes.text);
-          setCoverLetterIsAI(coverRes.isRealAI);
-          setCoverLetterModel(coverRes.model || 'Gemini Flash');
-        }
+        // Gera a carta de apresentação em segundo plano logo após para não saturar a cota por minuto (15 RPM)
+        generateCoverLetterWithLLM(userProfile, job, keyToUse, langToUse, selectedTone)
+          .then(coverRes => {
+            if (coverRes && coverRes.text) {
+              setCoverLetterText(coverRes.text);
+              setCoverLetterIsAI(coverRes.isRealAI);
+              setCoverLetterModel(coverRes.model || 'Gemini Flash');
+            }
+          })
+          .catch(() => {})
+          .finally(() => setIsGeneratingCoverLetter(false));
+      } else {
+        setConnectionStatus('disconnected');
+        const errMsg = result.aiError || 'Falha ao contatar a API de IA. Exibindo versão base estruturada.';
+        setLastAiError(errMsg);
+        setEditToast(`Aviso: ${errMsg}`);
+        setTimeout(() => setEditToast(''), 8000);
+        setIsGeneratingCoverLetter(false);
       }
     } catch (err) {
       console.error("Erro na geração com IA:", err);
