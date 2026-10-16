@@ -569,16 +569,18 @@ export async function getAvailableGeminiModels(apiKey = '') {
             .map(m => m.name.replace(/^models\//, ''));
 
           if (textModels.length > 0) {
-            // Priorizar os modelos estáveis mais rápidos para texto
+            // Priorizar os modelos estáveis mais modernos e rápidos para texto (Gemini 3.8 Flash e Flash Lite)
             const sorted = [
+              textModels.find(m => m === 'gemini-3.8-flash'),
+              textModels.find(m => m === 'gemini-flash-lite-latest'),
+              textModels.find(m => m === 'gemini-flash-latest'),
+              textModels.find(m => m.includes('3.8-flash')),
               textModels.find(m => m === 'gemini-2.0-flash'),
               textModels.find(m => m === 'gemini-1.5-flash-8b'),
               textModels.find(m => m === 'gemini-1.5-flash' || m === 'gemini-1.5-flash-latest'),
-              textModels.find(m => m === 'gemini-2.5-flash'),
               textModels.find(m => m.includes('2.0-flash')),
               textModels.find(m => m.includes('1.5-flash')),
-              textModels.find(m => m.includes('1.5-pro')),
-              ...textModels.filter(m => m.startsWith('gemini'))
+              ...textModels.filter(m => m.startsWith('gemini') && m !== 'gemini-2.5-flash')
             ].filter(Boolean);
 
             return Array.from(new Set(sorted));
@@ -609,15 +611,18 @@ export async function testGeminiConnection(apiKey = '') {
   // 1. Descobrir os modelos oficiais de texto ativos nesta conta via ListModels
   const discoveredModels = await getAvailableGeminiModels(cleanKey);
 
-  // Fallbacks de modelos de texto ultra rápidos e estáveis (Gemini 2.0 Flash / 1.5 Flash 8b)
+  // Fallbacks de modelos de texto ultra modernos e rápidos (Gemini 3.8 Flash / Flash Lite)
   const fallbackCandidates = [
+    'gemini-3.8-flash',
+    'gemini-flash-lite-latest',
+    'gemini-flash-latest',
     'gemini-2.0-flash',
     'gemini-1.5-flash-8b',
     'gemini-1.5-flash'
   ];
 
   const modelsToTry = Array.from(new Set([...discoveredModels, ...fallbackCandidates]))
-    .filter(m => m && m.startsWith('gemini') && !m.includes('gemma') && !m.includes('-exp'));
+    .filter(m => m && m.startsWith('gemini') && !m.includes('gemma') && !m.includes('-exp') && m !== 'gemini-2.5-flash');
   let lastError = null;
 
   for (const model of modelsToTry) {
@@ -1056,24 +1061,32 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
 
   const prompt = buildResumePrompt(userProfile, job, tone, targetLanguage);
 
-  // 1. Prioriza modelo já confirmado como funcional e os modelos Flash mais rápidos da Google (Gemini 2.0 Flash / 1.5 Flash 8B)
+  // 1. Prioriza modelo já confirmado como funcional e os modelos Flash mais rápidos da Google (Gemini 3.8 Flash / Flash Lite)
   let cachedModel = null;
   try {
     cachedModel = localStorage.getItem('working_gemini_model') || sessionStorage.getItem('working_gemini_model');
-    if (cachedModel && (!cachedModel.startsWith('gemini') || cachedModel.includes('gemma') || cachedModel.includes('-exp'))) {
+    if (cachedModel && (!cachedModel.startsWith('gemini') || cachedModel.includes('gemma') || cachedModel.includes('-exp') || cachedModel === 'gemini-2.5-flash')) {
       localStorage.removeItem('working_gemini_model');
       sessionStorage.removeItem('working_gemini_model');
       cachedModel = null;
     }
   } catch (e) { }
 
+  let discoveredModels = [];
+  try {
+    discoveredModels = await getAvailableGeminiModels(cleanKey);
+  } catch (_) { }
+
   const priorityFastModels = [
     cachedModel,
+    ...discoveredModels,
+    'gemini-3.8-flash',
+    'gemini-flash-lite-latest',
+    'gemini-flash-latest',
     'gemini-2.0-flash',
     'gemini-1.5-flash-8b',
-    'gemini-1.5-flash',
-    'gemini-2.5-flash'
-  ].filter(m => m && m.startsWith('gemini') && !m.includes('gemma') && !m.includes('-exp'));
+    'gemini-1.5-flash'
+  ].filter(m => m && m.startsWith('gemini') && !m.includes('gemma') && !m.includes('-exp') && m !== 'gemini-2.5-flash');
 
   const modelsToTry = Array.from(new Set(priorityFastModels));
   let lastError = null;
@@ -1354,17 +1367,20 @@ DADOS REAIS DO CANDIDATO:
   let cachedModel = null;
   try {
     cachedModel = localStorage.getItem('working_gemini_model') || sessionStorage.getItem('working_gemini_model');
-    if (cachedModel && (!cachedModel.startsWith('gemini') || cachedModel.includes('gemma') || cachedModel.includes('-exp'))) {
+    if (cachedModel && (!cachedModel.startsWith('gemini') || cachedModel.includes('gemma') || cachedModel.includes('-exp') || cachedModel === 'gemini-2.5-flash')) {
       cachedModel = null;
     }
   } catch (e) { }
 
   const modelsToTry = Array.from(new Set([
     cachedModel,
+    'gemini-3.8-flash',
+    'gemini-flash-lite-latest',
+    'gemini-flash-latest',
     'gemini-2.0-flash',
     'gemini-1.5-flash-8b',
     'gemini-1.5-flash'
-  ].filter(m => m && m.startsWith('gemini') && !m.includes('gemma') && !m.includes('-exp'))));
+  ].filter(m => m && m.startsWith('gemini') && !m.includes('gemma') && !m.includes('-exp') && m !== 'gemini-2.5-flash')));
 
   for (const model of modelsToTry) {
     try {

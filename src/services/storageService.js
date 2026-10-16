@@ -159,10 +159,10 @@ export function clearCachedRealJobs() {
  */
 export function loadAiSettings() {
   try {
-    // Purge deprecated or slow models (Gemma, exp) from cache
+    // Purge deprecated or slow models (Gemma, exp, gemini-2.5-flash) from cache
     try {
       const working = localStorage.getItem('working_gemini_model');
-      if (working && (!working.startsWith('gemini') || working.includes('gemma') || working.includes('-exp'))) {
+      if (working && (!working.startsWith('gemini') || working.includes('gemma') || working.includes('-exp') || working === 'gemini-2.5-flash')) {
         localStorage.removeItem('working_gemini_model');
         localStorage.removeItem('working_gemini_api_ver');
       }
@@ -198,9 +198,9 @@ export function loadAiSettings() {
       const parsed = JSON.parse(saved);
       const effectiveKey = (parsed.apiKey || legacyKey || defaultEnvKey || '').trim();
       const detectedProvider = parsed.provider || (effectiveKey.startsWith('sk-') ? 'openai' : defaultEnvProvider);
-      let model = parsed.model || (detectedProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-2.0-flash');
-      if (model && model.includes('-exp')) {
-        model = 'gemini-2.0-flash';
+      let model = parsed.model || (detectedProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-3.8-flash');
+      if (model && (model.includes('-exp') || model.includes('gemma') || model === 'gemini-2.5-flash')) {
+        model = 'gemini-3.8-flash';
       }
       return {
         provider: detectedProvider,
@@ -215,7 +215,7 @@ export function loadAiSettings() {
     return {
       provider: isLegacyOpenAi ? 'openai' : 'gemini',
       apiKey: legacyTrimmed,
-      model: isLegacyOpenAi ? 'gpt-4o-mini' : 'gemini-2.0-flash',
+      model: isLegacyOpenAi ? 'gpt-4o-mini' : 'gemini-3.8-flash',
       enabled: Boolean(legacyTrimmed)
     };
   } catch (e) {
@@ -223,7 +223,7 @@ export function loadAiSettings() {
     return {
       provider: 'gemini',
       apiKey: '',
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3.8-flash',
       enabled: false
     };
   }
