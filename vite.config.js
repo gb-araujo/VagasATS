@@ -516,6 +516,12 @@ function jobAnalyzerPlugin() {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss(), jobAnalyzerPlugin()],
+  define: {
+    'process.env.VITE_GEMINI_API_KEY': JSON.stringify(process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || ''),
+    'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || ''),
+    'process.env.VITE_OPENAI_API_KEY': JSON.stringify(process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY || ''),
+    'process.env.OPENAI_API_KEY': JSON.stringify(process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY || '')
+  },
   server: {
     proxy: {
       // Proxy para API de vagas da Gupy no Brasil

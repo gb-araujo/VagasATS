@@ -159,30 +159,63 @@ export function clearCachedRealJobs() {
  */
 export function loadAiSettings() {
   try {
+    // Purge deprecated experimental models from cache
+    try {
+      const working = localStorage.getItem('working_gemini_model');
+      if (working && working.includes('-exp')) {
+        localStorage.removeItem('working_gemini_model');
+        localStorage.removeItem('working_gemini_api_ver');
+      }
+    } catch (_) { }
+
     const saved = localStorage.getItem(STORAGE_KEYS.AI_SETTINGS);
     let legacyKey = '';
     try {
       legacyKey = localStorage.getItem('gemini_api_key') || '';
     } catch (_) { }
 
+    // Suporte a variáveis de ambiente configuradas na Vercel (.env ou Vercel Dashboard)
+    let envGeminiKey = '';
+    let envOpenAiKey = '';
+    try {
+      if (typeof import.meta !== 'undefined' && import.meta.env) {
+        envGeminiKey = (import.meta.env.VITE_GEMINI_API_KEY || '').trim();
+        envOpenAiKey = (import.meta.env.VITE_OPENAI_API_KEY || '').trim();
+      }
+    } catch (_) { }
+
+    try {
+      if (typeof process !== 'undefined' && process.env) {
+        if (!envGeminiKey) envGeminiKey = (process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '').trim();
+        if (!envOpenAiKey) envOpenAiKey = (process.env.VITE_OPENAI_API_KEY || process.env.OPENAI_API_KEY || '').trim();
+      }
+    } catch (_) { }
+
+    const defaultEnvKey = envGeminiKey || envOpenAiKey;
+    const defaultEnvProvider = envOpenAiKey && !envGeminiKey ? 'openai' : 'gemini';
+
     if (saved) {
       const parsed = JSON.parse(saved);
-      const effectiveKey = (parsed.apiKey || legacyKey || '').trim();
-      const detectedProvider = parsed.provider || (effectiveKey.startsWith('sk-') ? 'openai' : 'gemini');
+      const effectiveKey = (parsed.apiKey || legacyKey || defaultEnvKey || '').trim();
+      const detectedProvider = parsed.provider || (effectiveKey.startsWith('sk-') ? 'openai' : defaultEnvProvider);
+      let model = parsed.model || (detectedProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-2.0-flash');
+      if (model && model.includes('-exp')) {
+        model = 'gemini-2.0-flash';
+      }
       return {
         provider: detectedProvider,
         apiKey: effectiveKey,
-        model: parsed.model || (detectedProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-1.5-flash'),
+        model,
         enabled: Boolean(effectiveKey)
       };
     }
 
-    const legacyTrimmed = legacyKey.trim();
-    const isLegacyOpenAi = legacyTrimmed.startsWith('sk-');
+    const legacyTrimmed = (legacyKey || defaultEnvKey || '').trim();
+    const isLegacyOpenAi = legacyTrimmed.startsWith('sk-') || defaultEnvProvider === 'openai';
     return {
       provider: isLegacyOpenAi ? 'openai' : 'gemini',
       apiKey: legacyTrimmed,
-      model: isLegacyOpenAi ? 'gpt-4o-mini' : 'gemini-1.5-flash',
+      model: isLegacyOpenAi ? 'gpt-4o-mini' : 'gemini-2.0-flash',
       enabled: Boolean(legacyTrimmed)
     };
   } catch (e) {
@@ -190,7 +223,7 @@ export function loadAiSettings() {
     return {
       provider: 'gemini',
       apiKey: '',
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.0-flash',
       enabled: false
     };
   }

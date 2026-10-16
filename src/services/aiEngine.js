@@ -544,14 +544,14 @@ export async function getAvailableGeminiModels(apiKey = '') {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data.models)) {
-          // Filtrar ESTRITAMENTE modelos de geração de TEXTO (rejeitar TTS, áudio, embeddings, imagem)
+          // Filtrar ESTRITAMENTE modelos de geração de TEXTO (rejeitar TTS, áudio, embeddings, imagem e -exp descontinuados)
           const textModels = data.models
             .filter(m => {
               if (!Array.isArray(m.supportedGenerationMethods) || !m.supportedGenerationMethods.includes('generateContent')) {
                 return false;
               }
               const name = m.name.toLowerCase();
-              if (name.includes('tts') || name.includes('audio') || name.includes('embed') || name.includes('imagen') || name.includes('aqa')) {
+              if (name.includes('tts') || name.includes('audio') || name.includes('embed') || name.includes('imagen') || name.includes('aqa') || name.includes('-exp')) {
                 return false;
               }
               return true;
@@ -561,10 +561,12 @@ export async function getAvailableGeminiModels(apiKey = '') {
           if (textModels.length > 0) {
             // Priorizar os modelos estáveis mais rápidos para texto
             const sorted = [
+              textModels.find(m => m === 'gemini-2.5-flash'),
+              textModels.find(m => m === 'gemini-2.0-flash'),
+              textModels.find(m => m.includes('2.0-flash')),
               textModels.find(m => m === 'gemini-1.5-flash' || m === 'gemini-1.5-flash-latest'),
               textModels.find(m => m.includes('1.5-flash') && !m.includes('8b')),
-              textModels.find(m => m === 'gemini-2.0-flash' || m === 'gemini-2.0-flash-exp'),
-              textModels.find(m => m.includes('2.0-flash')),
+              textModels.find(m => m.includes('1.5-flash-8b')),
               textModels.find(m => m.includes('1.5-pro')),
               textModels.find(m => m === 'gemini-pro'),
               ...textModels
@@ -598,16 +600,17 @@ export async function testGeminiConnection(apiKey = '') {
   // 1. Descobrir os modelos oficiais de texto ativos nesta conta via ListModels
   const discoveredModels = await getAvailableGeminiModels(cleanKey);
 
-  // Fallbacks de modelos de texto modernos (Gemini 2.0 e 1.5 Flash)
+  // Fallbacks de modelos de texto modernos e estáveis (Gemini 2.5, 2.0 e 1.5 Flash)
   const fallbackCandidates = [
+    'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
     'gemini-1.5-flash-latest',
-    'gemini-1.5-flash-8b',
-    'gemini-2.0-flash-exp'
+    'gemini-1.5-flash-8b'
   ];
 
-  const modelsToTry = Array.from(new Set([...discoveredModels, ...fallbackCandidates]));
+  const modelsToTry = Array.from(new Set([...discoveredModels, ...fallbackCandidates]))
+    .filter(m => m && !m.includes('-exp'));
   let lastError = null;
 
   for (const model of modelsToTry) {
@@ -1040,25 +1043,38 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
 
   const prompt = buildResumePrompt(userProfile, job, tone, targetLanguage);
 
-  // 1. Prioriza modelo já confirmado como funcional e os modelos Flash mais rápidos da Google (Gemini 1.5 Flash / 2.0 Flash)
+  // 1. Prioriza modelo já confirmado como funcional e os modelos Flash mais rápidos da Google (Gemini 2.5 Flash / 2.0 Flash / 1.5 Flash)
   let cachedModel = null;
   try {
     cachedModel = localStorage.getItem('working_gemini_model') || sessionStorage.getItem('working_gemini_model');
+    if (cachedModel && cachedModel.includes('-exp')) {
+      localStorage.removeItem('working_gemini_model');
+      sessionStorage.removeItem('working_gemini_model');
+      cachedModel = null;
+    }
   } catch (e) { }
+
+  // Descobre modelos ativos da conta dinamicamente se não houver cache
+  let discoveredModels = [];
+  try {
+    discoveredModels = await getAvailableGeminiModels(cleanKey);
+  } catch (_) { }
 
   const priorityFastModels = [
     cachedModel,
-    'gemini-1.5-flash',
+    ...discoveredModels,
+    'gemini-2.5-flash',
     'gemini-2.0-flash',
+    'gemini-1.5-flash',
     'gemini-1.5-flash-latest',
-    'gemini-2.0-flash-exp'
-  ].filter(Boolean);
+    'gemini-1.5-flash-8b'
+  ].filter(m => m && !m.includes('-exp'));
 
   const modelsToTry = Array.from(new Set(priorityFastModels));
   let lastError = null;
   let isQuotaExceeded = false;
 
-  // Tentativa com modelos rápidos, timeout de 25s e modo JSON nativo (v1beta)
+  // Tentativa com modelos rápidos, timeout de 25s e modo JSON nativo (v1beta é o endpoint canônico)
   for (const model of modelsToTry) {
     const apiVersions = ['v1beta', 'v1'];
     for (const apiVer of apiVersions) {
@@ -1141,7 +1157,12 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
           throw new Error('A IA respondeu, mas o formato JSON do currículo veio truncado ou inválido.');
         }
 
-        if (parsed.tailoredSummary || parsed.experiences) {
+        // Desempacota nós aninhados caso a IA tenha retornado { resume: {...} } ou { data: {...} }
+        const root = parsed.resume || parsed.curriculo || parsed.data || parsed;
+        const summary = (root.tailoredSummary || root.summary || root.resumo || root.professionalSummary || root.perfil || '').trim();
+        const exps = root.experiences || root.experiencias || root.experiencia || null;
+
+        if (summary || (Array.isArray(exps) && exps.length > 0)) {
           console.log(`[vagasATS AI] Currículo gerado com sucesso por ${model}!`);
           try {
             localStorage.setItem('working_gemini_model', model);
@@ -1151,13 +1172,13 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
           // Registra a requisição e tokens no tracker de cota
           recordAiRequest('gemini', 1800);
 
-          let cleanSummary = (parsed.tailoredSummary || localBase.tailoredSummary || '').trim();
+          let cleanSummary = (summary || localBase.tailoredSummary || '').trim();
           cleanSummary = cleanSummary.replace(/^binho\b\s*/i, 'Alinhado a ');
           cleanSummary = cleanSummary.replace(/\bbinho\b/gi, 'alinhado');
           cleanSummary = sanitizePdfText(cleanSummary);
 
           const mappedExperiences = (userProfile.experiences || []).map((exp, idx) => {
-            const llmExp = parsed.experiences?.find(e => e.id === exp.id) || parsed.experiences?.[idx];
+            const llmExp = Array.isArray(exps) ? (exps.find(e => e && e.id === exp.id) || exps[idx]) : null;
             const rawBullets = (llmExp && Array.isArray(llmExp.bullets) && llmExp.bullets.length > 0)
               ? llmExp.bullets
               : (exp.bullets || [exp.description || '']);
@@ -1175,18 +1196,20 @@ export async function generateTailoredResumeWithLLM(userProfile, job, apiKey = "
             language: localBase.language,
             tailoredSummary: cleanSummary,
             experiences: mappedExperiences,
-            skills: (parsed.prioritizedSkills && parsed.prioritizedSkills.length > 0
-              ? parsed.prioritizedSkills
+            skills: (((root.prioritizedSkills || root.skills) && (root.prioritizedSkills || root.skills).length > 0)
+              ? (root.prioritizedSkills || root.skills)
               : localBase.skills).map(sanitizePdfText),
-            atsKeywords: (parsed.atsKeywords && parsed.atsKeywords.length > 0
-              ? parsed.atsKeywords
+            atsKeywords: (((root.atsKeywords || root.keywords) && (root.atsKeywords || root.keywords).length > 0)
+              ? (root.atsKeywords || root.keywords)
               : localBase.atsKeywords).map(sanitizePdfText),
-            crossMatchHighlights: (parsed.crossMatchHighlights && parsed.crossMatchHighlights.length > 0
-              ? parsed.crossMatchHighlights
+            crossMatchHighlights: (((root.crossMatchHighlights || root.highlights) && (root.crossMatchHighlights || root.highlights).length > 0)
+              ? (root.crossMatchHighlights || root.highlights)
               : localBase.crossMatchHighlights).map(sanitizePdfText),
             isRealAI: true,
             aiModel: `Google ${model}`
           };
+        } else {
+          throw new Error('A IA respondeu, mas a estrutura retornada não contém os campos de resumo ou experiências.');
         }
       } catch (e) {
         lastError = e.name === 'AbortError' ? 'Tempo de resposta esgotado (timeout 25s)' : e.message;
@@ -1332,15 +1355,24 @@ DADOS REAIS DO CANDIDATO:
   let cachedModel = null;
   try {
     cachedModel = localStorage.getItem('working_gemini_model') || sessionStorage.getItem('working_gemini_model');
+    if (cachedModel && cachedModel.includes('-exp')) {
+      cachedModel = null;
+    }
   } catch (e) { }
+
+  let discoveredModels = [];
+  try {
+    discoveredModels = await getAvailableGeminiModels(cleanKey);
+  } catch (_) { }
 
   const modelsToTry = Array.from(new Set([
     cachedModel,
+    ...discoveredModels,
+    'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
-    'gemini-2.0-flash-exp',
     'gemini-1.5-flash-latest'
-  ].filter(Boolean)));
+  ].filter(m => m && !m.includes('-exp'))));
 
   for (const model of modelsToTry) {
     for (const apiVer of ['v1beta', 'v1']) {
