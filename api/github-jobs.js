@@ -19,7 +19,8 @@ export default async function handler(req, res) {
     const ghRes = await fetch(ghUrl, {
       headers: {
         'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'vagas-ats-app'
+        'User-Agent': 'vagas-ats-app',
+        ...(process.env.GITHUB_TOKEN ? { 'Authorization': `Bearer ${process.env.GITHUB_TOKEN}` } : {})
       }
     });
 

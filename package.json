@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "hunt": "node --env-file-if-exists=.env scripts/auto-hunter/index.mjs",
+    "hunt:dry": "DRY_RUN=1 node --env-file-if-exists=.env scripts/auto-hunter/index.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -23,6 +25,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "nodemailer": "^6.10.1",
     "oxlint": "^1.81.0",
     "vite": "^8.3.0"
   }

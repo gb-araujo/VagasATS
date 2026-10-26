@@ -1,0 +1,72 @@
+name: Robô de candidaturas
+
+on:
+  schedule:
+    # A cada 2h entre 08h e 22h (horário de Brasília = UTC-3)
+    - cron: '0 11-23/2,1 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Simulação (não envia candidaturas nem salva estado)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-hunter
+  cancel-in-progress: false
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # O estado (vagas vistas e candidaturas) fica no branch "bot-state" para não disparar deploys no main
+      - name: Carregar estado do robô
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin bot-state >/dev/null; then
+            git fetch --depth=1 origin bot-state
+            git worktree add -B bot-state .bot-state origin/bot-state
+          else
+            git worktree add --detach .bot-state
+            cd .bot-state
+            git checkout --orphan bot-state
+            git rm -rfq .
+          fi
+
+      - name: Buscar, avaliar e aplicar
+        env:
+          PROFILE_JSON: ${{ secrets.PROFILE_JSON }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          NOTIFY_EMAIL: ${{ secrets.NOTIFY_EMAIL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STATE_DIR: .bot-state
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: node scripts/auto-hunter/index.mjs
+
+      - name: Salvar estado do robô
+        if: ${{ !inputs.dry_run }}
+        working-directory: .bot-state
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Sem mudanças no estado."
+          else
+            git commit -qm "chore(bot): atualiza estado do robô de candidaturas"
+            git push -q origin bot-state
+          fi

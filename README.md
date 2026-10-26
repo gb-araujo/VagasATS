@@ -15,7 +15,8 @@
 7. [Estrutura de Diretórios](#-estrutura-de-diret%C3%B3rios)
 8. [Instalação e Execução Local](#-instala%C3%A7%C3%A3o-e-execu%C3%A7%C3%A3o-local)
 9. [Scripts Disponíveis](#-scripts-dispon%C3%ADveis)
-10. [Licença](#-licen%C3%A7a)
+10. [Robô de Candidaturas Automáticas](#-rob%C3%B4-de-candidaturas-autom%C3%A1ticas)
+11. [Licença](#-licen%C3%A7a)
 
 ---
 
@@ -264,6 +265,58 @@ ia_vagas/
 | `npm run build` | Compila e minifica a aplicação para distribuição em produção dentro da pasta `/dist`. |
 | `npm run preview` | Executa localmente o bundle de produção gerado para validação final. |
 | `npm run lint` | Realiza a verificação estática do código-fonte através do Oxlint. |
+| `npm run hunt` | Executa o robô de candidaturas automáticas localmente (lê `.env`). |
+| `npm run hunt:dry` | Executa o robô em modo simulação: avalia vagas e salva prévias de currículo/carta em `automation/state/preview`, sem enviar nada. |
+
+---
+
+## 🤖 Robô de Candidaturas Automáticas
+
+O robô (`scripts/auto-hunter/`) roda sozinho no **GitHub Actions** a cada 2 horas (08h–22h, horário de Brasília) e:
+
+1. Busca vagas reais com o mesmo motor do app (Gupy, Nerdin e comunidades do GitHub).
+2. Descarta vagas já vistas e filtra pelo seu perfil (senioridade, modalidade e match local).
+3. Avalia as melhores com o **Google Gemini** (score, motivo, riscos e se a vaga aceita candidatura por email).
+4. **Vagas que pedem currículo por email**: gera currículo ATS em PDF e carta sob medida e envia pelo seu Gmail (com cópia oculta para você).
+5. **Demais vagas aprovadas** (Gupy, formulários, etc.): entram no relatório *"Prontas para aplicar"* enviado ao seu email, com link, score e motivo, para você aplicar com a extensão.
+
+O histórico (vagas vistas e candidaturas) fica no branch `bot-state`, que não dispara deploys na Vercel.
+
+### Configuração (uma vez)
+
+1. **Exporte seu perfil** no app: aba *Perfil* → *Exportar Perfil (.json)* → *Exportar Perfil Profissional (Recomendado)* (sem a chave de API).
+2. **Crie uma senha de app do Gmail**: ative a verificação em duas etapas e gere em [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+3. No GitHub, vá em *Settings → Secrets and variables → Actions* e crie os secrets:
+
+| Secret | Valor |
+| :--- | :--- |
+| `PROFILE_JSON` | Conteúdo completo do JSON exportado do perfil |
+| `GEMINI_API_KEY` | Sua chave do Google AI Studio |
+| `GMAIL_USER` | Seu endereço do Gmail que enviará as candidaturas |
+| `GMAIL_APP_PASSWORD` | A senha de app de 16 caracteres |
+| `NOTIFY_EMAIL` | *(opcional)* Email que recebe os relatórios (padrão: `GMAIL_USER`) |
+
+4. Em *Actions → Robô de candidaturas → Run workflow*, rode primeiro com **Simulação** marcada para validar.
+
+### Ajustes em `automation/config.json`
+
+| Campo | Padrão | Função |
+| :--- | :--- | :--- |
+| `search.searchTerms` | `[""]` | Termos de busca (vazio = busca ampla em tecnologia). Ex.: `["java", "kotlin"]` |
+| `search.maxJobAgeHours` | `72` | Ignora vagas mais antigas que isso |
+| `filters.minLocalScore` | `60` | Match local mínimo para gastar uma chamada de IA |
+| `filters.blockedKeywords` / `blockedCompanies` | `[]` | Títulos ou empresas a ignorar |
+| `ai.maxEvaluationsPerRun` | `15` | Limite de avaliações por execução (respeita a cota gratuita do Gemini) |
+| `ai.minAiScore` | `70` | Nota mínima da IA para aplicar/entrar na fila |
+| `autoSend.enabled` | `true` | Liga/desliga o envio automático por email |
+| `autoSend.maxEmailsPerRun` | `5` | Máximo de candidaturas enviadas por execução |
+| `autoSend.requireRealAI` | `true` | Só envia se currículo e carta foram gerados pela IA (nunca envia texto genérico) |
+
+### Uso local
+
+Crie um `.env` com as mesmas variáveis (ou salve o perfil em `automation/profile.json`, ignorado pelo git) e rode `npm run hunt:dry` ou `npm run hunt`.
+
+> ⚠️ O robô **não** se candidata sozinho na Gupy e em outros portais com login: os termos de uso proíbem automação e a conta pode ser bloqueada. Essas vagas vão para o relatório para você aplicar em poucos cliques com a extensão.
 
 ---
 

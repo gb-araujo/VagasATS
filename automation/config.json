@@ -1,0 +1,32 @@
+{
+  "search": {
+    "searchTerms": [""],
+    "platforms": ["Gupy", "Nerdin", "FrontendBR", "BackendBR", "Comunidades BR"],
+    "workTypeFilter": "Todos",
+    "region": "Todas",
+    "techArea": "all",
+    "maxJobAgeHours": 72
+  },
+  "filters": {
+    "minLocalScore": 60,
+    "onlyProfileSeniorities": true,
+    "onlyProfileWorkPreferences": true,
+    "blockedKeywords": [],
+    "blockedCompanies": []
+  },
+  "ai": {
+    "maxEvaluationsPerRun": 15,
+    "minAiScore": 70,
+    "delayBetweenCallsMs": 4000
+  },
+  "autoSend": {
+    "enabled": true,
+    "maxEmailsPerRun": 5,
+    "requireRealAI": true,
+    "bccMyself": true
+  },
+  "notify": {
+    "enabled": true,
+    "onlyWhenNews": true
+  }
+}

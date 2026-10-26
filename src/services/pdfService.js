@@ -1,4 +1,4 @@
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 
 /**
  * Limpa títulos de vagas excessivamente longos para cabeçalhos de currículo,
@@ -130,6 +130,24 @@ export function sanitizePdfText(text = '') {
  * Service to generate high-resolution ATS-friendly PDF Resumes
  */
 export function exportResumeToPDF(tailoredResume, templateStyle = 'modern') {
+  const doc = buildResumePDF(tailoredResume, templateStyle);
+  doc.save(getResumeFileName(tailoredResume));
+}
+
+/**
+ * Nome de arquivo padronizado do currículo (usado no download e nos anexos do robô)
+ */
+export function getResumeFileName(tailoredResume) {
+  const isEn = tailoredResume.language === 'en';
+  const safeName = (tailoredResume.fullName || "Curriculo").trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeCompany = (cleanCompanyName(tailoredResume.targetCompany) || "Vaga").trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+  return `${isEn ? 'Resume' : 'Curriculo'}_${safeName}_${safeCompany}.pdf`;
+}
+
+/**
+ * Monta o documento jsPDF do currículo sem salvar (funciona no navegador e no Node)
+ */
+export function buildResumePDF(tailoredResume, templateStyle = 'modern') {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -347,10 +365,7 @@ export function exportResumeToPDF(tailoredResume, templateStyle = 'modern') {
     y += 6;
   }
 
-  // Save the generated PDF (100% clean, no AI watermarks or footer text)
-  const safeName = (tailoredResume.fullName || "Curriculo").trim().replace(/[^a-zA-Z0-9_-]/g, '_');
-  const safeCompany = (cleanCompanyName(tailoredResume.targetCompany) || "Vaga").trim().replace(/[^a-zA-Z0-9_-]/g, '_');
-  const filename = `${isEn ? 'Resume' : 'Curriculo'}_${safeName}_${safeCompany}.pdf`;
-  doc.save(filename);
+  // PDF 100% limpo, sem marcas d'água ou rodapé de IA
+  return doc;
 }
 

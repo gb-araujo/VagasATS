@@ -1,4 +1,4 @@
-import { INITIAL_USER_PROFILE, INITIAL_JOBS } from '../data/mockJobs';
+import { INITIAL_USER_PROFILE, INITIAL_JOBS } from '../data/mockJobs.js';
 
 const STORAGE_KEYS = {
   PROFILE: 'ia_vagas_user_profile',
