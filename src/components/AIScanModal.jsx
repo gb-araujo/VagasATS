@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Bot, Sparkles, CheckCircle2, RefreshCw, Zap, ShieldCheck, ArrowRight } from 'lucide-react';
 import { fetchRealJobs } from '../services/aiEngine';
 
-export default function AIScanModal({ userProfile, onClose, onAddJobs }) {
+export default function AIScanModal({ userProfile, onClose, onAddJobs, existingJobs = [] }) {
   const [step, setStep] = useState(1);
   const [foundJobs, setFoundJobs] = useState([]);
   const [scanError, setScanError] = useState('');
@@ -12,10 +12,10 @@ export default function AIScanModal({ userProfile, onClose, onAddJobs }) {
     const timer1 = setTimeout(() => setStep(2), 1200);
     const timer2 = setTimeout(() => setStep(3), 2500);
     const timer3 = setTimeout(() => {
-      fetchRealJobs({ seniorities: userProfile.seniorities || [] })
+      fetchRealJobs({ seniorities: userProfile.seniorities || [], forceRefresh: true })
         .then(({ jobs }) => {
           if (cancelled) return;
-          setFoundJobs(jobs);
+          setFoundJobs(jobs || []);
           setStep(4);
         })
         .catch(err => {
@@ -41,6 +41,25 @@ export default function AIScanModal({ userProfile, onClose, onAddJobs }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+
+  const existingKeys = React.useMemo(() => {
+    const set = new Set();
+    (existingJobs || []).forEach(j => {
+      if (j?.id) set.add(String(j.id));
+      if (j?.title && j?.company) {
+        set.add(`${j.title.trim().toLowerCase()}|${j.company.trim().toLowerCase()}`);
+      }
+    });
+    return set;
+  }, [existingJobs]);
+
+  const newJobsOnly = React.useMemo(() => {
+    return (foundJobs || []).filter(j => {
+      if (!j || !j.id) return false;
+      const key = `${(j.title || '').trim().toLowerCase()}|${(j.company || '').trim().toLowerCase()}`;
+      return !existingKeys.has(String(j.id)) && !existingKeys.has(key);
+    });
+  }, [foundJobs, existingKeys]);
 
   const handleFinish = () => {
     if (foundJobs.length > 0) onAddJobs(foundJobs);
@@ -120,10 +139,16 @@ export default function AIScanModal({ userProfile, onClose, onAddJobs }) {
           <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-xl text-center space-y-2 animate-fade-in">
             <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1">
               <Zap className="w-4 h-4" />
-              {scanError ? 'Não foi possível buscar novas vagas no momento' : `${foundJobs.length} Vagas Reais Encontradas!`}
+              {scanError 
+                ? 'Não foi possível buscar novas vagas no momento' 
+                : newJobsOnly.length > 0 
+                  ? `${newJobsOnly.length} Novas Vagas Inéditas Encontradas!`
+                  : 'Feed 100% Atualizado!'}
             </span>
             <p className="text-[11px] text-[var(--text-muted)]">
-              Vagas adicionadas instantaneamente ao seu feed com currículo pronto para gerar em PDF.
+              {newJobsOnly.length > 0
+                ? `${newJobsOnly.length} novas vagas reais filtradas e sem duplicatas prontas para análise ATS.`
+                : 'Todas as vagas mais recentes das plataformas oficiais já estão carregadas no seu feed.'}
             </p>
           </div>
         )}
@@ -134,7 +159,7 @@ export default function AIScanModal({ userProfile, onClose, onAddJobs }) {
             onClick={handleFinish}
             className="w-full gradient-btn py-3 rounded-xl font-bold text-xs text-white flex items-center justify-center gap-2 cursor-pointer"
           >
-            <span>Ver Novas Vagas no Feed</span>
+            <span>{newJobsOnly.length > 0 ? `Ver ${newJobsOnly.length} Novas Vagas no Feed` : 'Voltar ao Feed de Vagas'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         ) : (

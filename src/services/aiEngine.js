@@ -569,7 +569,7 @@ export async function getAvailableGeminiModels(apiKey = '') {
             .map(m => m.name.replace(/^models\//, ''));
 
           if (textModels.length > 0) {
-            // Priorizar os modelos estáveis mais modernos e rápidos para texto (Gemini 3.8 Flash e Flash Lite)
+            // Priorizar os modelos estáveis mais modernos e rápidos para texto
             const sorted = [
               textModels.find(m => m === 'gemini-3.8-flash'),
               textModels.find(m => m === 'gemini-flash-lite-latest'),
@@ -577,9 +577,7 @@ export async function getAvailableGeminiModels(apiKey = '') {
               textModels.find(m => m.includes('3.8-flash')),
               textModels.find(m => m === 'gemini-2.0-flash'),
               textModels.find(m => m === 'gemini-1.5-flash-8b'),
-              textModels.find(m => m === 'gemini-1.5-flash' || m === 'gemini-1.5-flash-latest'),
-              textModels.find(m => m.includes('2.0-flash')),
-              textModels.find(m => m.includes('1.5-flash')),
+              textModels.find(m => m === 'gemini-1.5-flash'),
               ...textModels.filter(m => m.startsWith('gemini') && m !== 'gemini-2.5-flash')
             ].filter(Boolean);
 
@@ -608,73 +606,116 @@ export async function testGeminiConnection(apiKey = '') {
 
   const startTime = Date.now();
 
-  // 1. Descobrir os modelos oficiais de texto ativos nesta conta via ListModels
-  const discoveredModels = await getAvailableGeminiModels(cleanKey);
+  // 1. Prioriza modelo já confirmado como funcional e os modelos Flash mais rápidos da Google
+  let cachedModel = null;
+  try {
+    const raw = localStorage.getItem('working_gemini_model') || sessionStorage.getItem('working_gemini_model');
+    if (raw && raw.startsWith('gemini') && !raw.includes('gemma') && !raw.includes('-exp') && raw !== 'gemini-2.5-flash') {
+      cachedModel = raw;
+    }
+  } catch (_) { }
 
-  // Fallbacks de modelos de texto ultra modernos e rápidos (Gemini 3.8 Flash / Flash Lite)
-  const fallbackCandidates = [
+  // Modelos oficiais do Google Gemini
+  const candidates = [
+    cachedModel,
     'gemini-3.8-flash',
     'gemini-flash-lite-latest',
     'gemini-flash-latest',
     'gemini-2.0-flash',
     'gemini-1.5-flash-8b',
     'gemini-1.5-flash'
-  ];
+  ].filter(m => m && m !== 'gemini-2.5-flash');
 
-  const modelsToTry = Array.from(new Set([...discoveredModels, ...fallbackCandidates]))
-    .filter(m => m && m.startsWith('gemini') && !m.includes('gemma') && !m.includes('-exp') && m !== 'gemini-2.5-flash');
+  const modelsToTry = Array.from(new Set(candidates));
   let lastError = null;
 
   for (const model of modelsToTry) {
-    for (const apiVer of ['v1beta', 'v1']) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Responda estritamente apenas a palavra: OK' }] }]
+        })
+      });
+
+      if (res.status === 429) {
+        return {
+          success: false,
+          message: 'Limite temporário por minuto atingido no Google Gemini (máx. 15 req/min no plano gratuito). Aguarde cerca de 30 a 60 segundos para sua cota ser liberada (sua cota diária de 1.500 ainda está intacta).'
+        };
+      }
+
+      if (res.ok) {
+        const latencyMs = Date.now() - startTime;
+        try {
+          sessionStorage.setItem('working_gemini_model', model);
+          sessionStorage.setItem('working_gemini_apiver', 'v1beta');
+          localStorage.setItem('working_gemini_model', model);
+          localStorage.setItem('working_gemini_api_ver', 'v1beta');
+        } catch (e) { }
+        return {
+          success: true,
+          model,
+          apiVer: 'v1beta',
+          latencyMs,
+          message: `Conectado com sucesso! Google ${model} operacional (${latencyMs}ms).`
+        };
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        const errMsg = errJson.error?.message || `HTTP ${res.status}`;
+        lastError = errMsg;
+
+        // Falha imediatamente se a chave for inválida ou não autorizada
+        if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid') || res.status === 401 || res.status === 403) {
+          return {
+            success: false,
+            message: `Chave inválida: ${errMsg}. Verifique se copiou a chave completa no Google AI Studio (aistudio.google.com).`
+          };
+        }
+
+        if (errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+          return {
+            success: false,
+            message: 'Limite temporário por minuto atingido no Google Gemini (15 req/min). Aguarde 30 a 60 segundos.'
+          };
+        }
+      }
+    } catch (e) {
+      lastError = e.message;
+    }
+  }
+
+  // Se nenhum dos modelos oficiais diretos funcionou, tenta listar como último recurso
+  try {
+    const discovered = await getAvailableGeminiModels(cleanKey);
+    for (const model of discovered) {
+      if (modelsToTry.includes(model)) continue;
       try {
-        const res = await fetch(`https://generativelanguage.googleapis.com/${apiVer}/models/${model}:generateContent?key=${cleanKey}`, {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: 'Responda estritamente apenas a palavra: OK' }] }]
           })
         });
-
-        if (res.status === 429) {
-          return {
-            success: false,
-            message: 'Limite de requisições temporário atingido no Google Gemini (15 req/min no plano gratuito). Aguarde cerca de 1 minuto para o Google restabelecer sua cota.'
-          };
-        }
-
         if (res.ok) {
           const latencyMs = Date.now() - startTime;
           try {
             sessionStorage.setItem('working_gemini_model', model);
-            sessionStorage.setItem('working_gemini_apiver', apiVer);
             localStorage.setItem('working_gemini_model', model);
-            localStorage.setItem('working_gemini_api_ver', apiVer);
-          } catch (e) { }
+          } catch (_) { }
           return {
             success: true,
             model,
-            apiVer,
+            apiVer: 'v1beta',
             latencyMs,
-            message: `Conectado! Google ${model} operacional (${latencyMs}ms).`
+            message: `Conectado com sucesso! Google ${model} operacional (${latencyMs}ms).`
           };
-        } else {
-          const errJson = await res.json().catch(() => ({}));
-          const errMsg = errJson.error?.message || `HTTP ${res.status}`;
-          lastError = errMsg;
-          // Só falha imediatamente se a chave for explicitamente inválida pelo Google (401 ou API_KEY_INVALID)
-          if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid') || res.status === 401) {
-            return {
-              success: false,
-              message: `Chave inválida: ${errMsg}. Verifique se copiou a chave completa no Google AI Studio.`
-            };
-          }
         }
-      } catch (e) {
-        lastError = e.message;
-      }
+      } catch (_) { }
     }
-  }
+  } catch (_) { }
 
   return {
     success: false,

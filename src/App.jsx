@@ -36,7 +36,18 @@ export default function App() {
     const cached = loadCachedRealJobs();
     if (cached && cached.length > 0) {
       const filtered = cached.filter(isTechDevJob);
-      if (filtered.length > 0) return filtered;
+      if (filtered.length > 0) {
+        const seen = new Set();
+        return filtered.filter(j => {
+          if (!j || !j.id) return false;
+          const idKey = String(j.id);
+          const normKey = `${(j.title || '').trim().toLowerCase()}|${(j.company || '').trim().toLowerCase()}`;
+          if (seen.has(idKey) || seen.has(normKey)) return false;
+          seen.add(idKey);
+          seen.add(normKey);
+          return true;
+        });
+      }
     }
     return INITIAL_JOBS.filter(isTechDevJob);
   });
@@ -117,9 +128,19 @@ export default function App() {
         if (requestId !== searchRequestId.current) return;
         const strictlyReal = (realJobs || []).filter(j => j && j.isReal && isTechDevJob(j));
         if (strictlyReal.length > 0) {
-          setJobs(strictlyReal);
-          saveCachedRealJobs(strictlyReal);
-          setRealJobsCount(strictlyReal.length);
+          const seen = new Set();
+          const unique = strictlyReal.filter(j => {
+            if (!j || !j.id) return false;
+            const idKey = String(j.id);
+            const normKey = `${(j.title || '').trim().toLowerCase()}|${(j.company || '').trim().toLowerCase()}`;
+            if (seen.has(idKey) || seen.has(normKey)) return false;
+            seen.add(idKey);
+            seen.add(normKey);
+            return true;
+          });
+          setJobs(unique);
+          saveCachedRealJobs(unique);
+          setRealJobsCount(unique.length);
         } else {
           setJobs(INITIAL_JOBS.filter(isTechDevJob));
           setRealJobsCount(INITIAL_JOBS.length);
@@ -206,11 +227,26 @@ export default function App() {
   const handleAddAIJobs = (newJobs) => {
     const strictlyReal = (newJobs || []).filter(j => j && j.isReal && isTechDevJob(j));
     setJobs(prev => {
-      const merged = [...strictlyReal, ...prev];
-      saveCachedRealJobs(merged);
-      return merged;
+      const seen = new Set();
+      // Novas vagas recebem prioridade no topo do feed, eliminando quaisquer duplicatas
+      const combined = [...strictlyReal, ...(prev || [])];
+      const deduplicated = [];
+
+      for (const job of combined) {
+        if (!job || !job.id) continue;
+        const idKey = String(job.id);
+        const normKey = `${(job.title || '').trim().toLowerCase()}|${(job.company || '').trim().toLowerCase()}`;
+        if (!seen.has(idKey) && !seen.has(normKey)) {
+          seen.add(idKey);
+          seen.add(normKey);
+          deduplicated.push(job);
+        }
+      }
+
+      saveCachedRealJobs(deduplicated);
+      setRealJobsCount(deduplicated.length);
+      return deduplicated;
     });
-    setRealJobsCount(prev => prev + strictlyReal.length);
     setRealJobsStatus('ok');
   };
 
@@ -230,7 +266,8 @@ export default function App() {
 
   // Filtered Jobs Computation - 100% Vagas Reais de Tecnologia e com pré-cálculo O(N)
   const filteredJobs = useMemo(() => {
-    // 1. Filtragem inicial: estritamente vagas REAIS e da área de TECNOLOGIA/DEV
+    // 1. Filtragem inicial: estritamente vagas REAIS e da área de TECNOLOGIA/DEV (sem duplicatas)
+    const seen = new Set();
     const result = jobs.filter(job => {
       if (!job || !job.isReal || !isTechDevJob(job)) return false;
 
@@ -304,6 +341,14 @@ export default function App() {
       // Min Match Score filter
       const match = calculateMatch(userProfile, job);
       if (match.score < minMatchScore) return false;
+
+      // Desduplicação estrita: NUNCA exibe a mesma vaga repetida no feed
+      const idKey = String(job.id || '');
+      const titleCompanyKey = `${(job.title || '').trim().toLowerCase()}|${(job.company || '').trim().toLowerCase()}`;
+      if (idKey && seen.has(idKey)) return false;
+      if (titleCompanyKey && seen.has(titleCompanyKey)) return false;
+      if (idKey) seen.add(idKey);
+      if (titleCompanyKey) seen.add(titleCompanyKey);
 
       return true;
     });
@@ -811,6 +856,7 @@ export default function App() {
           userProfile={userProfile}
           onClose={() => setShowAIScanModal(false)}
           onAddJobs={handleAddAIJobs}
+          existingJobs={jobs}
         />
       )}
 

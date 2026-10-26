@@ -113,19 +113,31 @@ export function loadCachedRealJobs() {
         return [];
       }
 
-      // Recalcula dinamicamente o postedHoursAgo em relação ao momento ATUAL
-      return rawList
-        .filter(j => j && j.isReal)
-        .map(j => {
-          if (j.publishedDate) {
-            const t = new Date(j.publishedDate).getTime();
-            if (!Number.isNaN(t)) {
-              const currentHours = Math.max(0, Math.round((Date.now() - t) / 36e5));
-              return { ...j, postedHoursAgo: currentHours };
-            }
+      // Recalcula dinamicamente o postedHoursAgo em relação ao momento ATUAL e desduplica
+      const seen = new Set();
+      const deduplicated = [];
+
+      for (const j of rawList) {
+        if (!j || !j.isReal) continue;
+        const idKey = String(j.id || '');
+        const titleCompanyKey = `${(j.title || '').trim().toLowerCase()}|${(j.company || '').trim().toLowerCase()}`;
+        if (idKey && seen.has(idKey)) continue;
+        if (titleCompanyKey && seen.has(titleCompanyKey)) continue;
+        if (idKey) seen.add(idKey);
+        if (titleCompanyKey) seen.add(titleCompanyKey);
+
+        if (j.publishedDate) {
+          const t = new Date(j.publishedDate).getTime();
+          if (!Number.isNaN(t)) {
+            const currentHours = Math.max(0, Math.round((Date.now() - t) / 36e5));
+            deduplicated.push({ ...j, postedHoursAgo: currentHours });
+            continue;
           }
-          return j;
-        });
+        }
+        deduplicated.push(j);
+      }
+
+      return deduplicated;
     }
   } catch (e) {
     console.error("Error loading cached real jobs:", e);
@@ -135,7 +147,18 @@ export function loadCachedRealJobs() {
 
 export function saveCachedRealJobs(jobs) {
   try {
-    const realOnly = (jobs || []).filter(j => j && j.isReal);
+    const seen = new Set();
+    const realOnly = [];
+    for (const j of (jobs || [])) {
+      if (!j || !j.isReal) continue;
+      const idKey = String(j.id || '');
+      const titleCompanyKey = `${(j.title || '').trim().toLowerCase()}|${(j.company || '').trim().toLowerCase()}`;
+      if (idKey && seen.has(idKey)) continue;
+      if (titleCompanyKey && seen.has(titleCompanyKey)) continue;
+      if (idKey) seen.add(idKey);
+      if (titleCompanyKey) seen.add(titleCompanyKey);
+      realOnly.push(j);
+    }
     if (realOnly.length > 0) {
       localStorage.setItem('ia_vagas_cached_real_jobs', JSON.stringify({
         timestamp: Date.now(),
@@ -159,10 +182,10 @@ export function clearCachedRealJobs() {
  */
 export function loadAiSettings() {
   try {
-    // Purge deprecated or slow models (Gemma, exp, gemini-2.5-flash) from cache
+    // Purge invalid, deprecated or hallucinated models (gemini-3.8-flash, latest, exp, gemma) from cache
     try {
       const working = localStorage.getItem('working_gemini_model');
-      if (working && (!working.startsWith('gemini') || working.includes('gemma') || working.includes('-exp') || working === 'gemini-2.5-flash')) {
+      if (working && (!working.startsWith('gemini') || working.includes('gemma') || working.includes('-exp') || working.includes('3.8') || working.includes('latest'))) {
         localStorage.removeItem('working_gemini_model');
         localStorage.removeItem('working_gemini_api_ver');
       }
@@ -198,9 +221,9 @@ export function loadAiSettings() {
       const parsed = JSON.parse(saved);
       const effectiveKey = (parsed.apiKey || legacyKey || defaultEnvKey || '').trim();
       const detectedProvider = parsed.provider || (effectiveKey.startsWith('sk-') ? 'openai' : defaultEnvProvider);
-      let model = parsed.model || (detectedProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-3.8-flash');
-      if (model && (model.includes('-exp') || model.includes('gemma') || model === 'gemini-2.5-flash')) {
-        model = 'gemini-3.8-flash';
+      let model = parsed.model || (detectedProvider === 'openai' ? 'gpt-4o-mini' : 'gemini-2.0-flash');
+      if (model && (model.includes('-exp') || model.includes('gemma') || model.includes('3.8') || model.includes('latest'))) {
+        model = 'gemini-2.0-flash';
       }
       return {
         provider: detectedProvider,
@@ -215,7 +238,7 @@ export function loadAiSettings() {
     return {
       provider: isLegacyOpenAi ? 'openai' : 'gemini',
       apiKey: legacyTrimmed,
-      model: isLegacyOpenAi ? 'gpt-4o-mini' : 'gemini-3.8-flash',
+      model: isLegacyOpenAi ? 'gpt-4o-mini' : 'gemini-2.0-flash',
       enabled: Boolean(legacyTrimmed)
     };
   } catch (e) {
@@ -223,7 +246,7 @@ export function loadAiSettings() {
     return {
       provider: 'gemini',
       apiKey: '',
-      model: 'gemini-3.8-flash',
+      model: 'gemini-2.0-flash',
       enabled: false
     };
   }
