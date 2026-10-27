@@ -1,0 +1,32 @@
+{
+  "gupy-12659835": {
+    "key": "analista de dados/bi|nomus",
+    "decision": "rejected",
+    "score": 40,
+    "at": "2026-10-27T13:28:22.407Z"
+  },
+  "gupy-12776502": {
+    "key": "backend developer jr|stefanini latam",
+    "decision": "rejected",
+    "score": 0,
+    "at": "2026-10-27T13:28:27.412Z"
+  },
+  "gh-backend-br-vagas-12292": {
+    "key": "developer asp.net/c# junior/pleno|dimensa",
+    "decision": "sent",
+    "score": 95,
+    "at": "2026-10-27T13:28:34.549Z"
+  },
+  "gupy-12742508": {
+    "key": "analista de banco de dados jr - remoto|lanlink informática",
+    "decision": "rejected",
+    "score": 40,
+    "at": "2026-10-27T13:29:24.282Z"
+  },
+  "gh-backend-br-vagas-12432": {
+    "key": "back-end developer net-|strider",
+    "decision": "rejected",
+    "score": 35,
+    "at": "2026-10-27T13:29:29.838Z"
+  }
+}

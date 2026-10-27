@@ -1,0 +1,21 @@
+[
+  {
+    "id": "gh-backend-br-vagas-12292",
+    "key": "developer asp.net/c# junior/pleno|dimensa",
+    "title": "Developer ASP.NET/C# Junior/Pleno",
+    "company": "Dimensa",
+    "source": "BackendBR",
+    "url": "https://github.com/backend-br/vagas/issues/12292",
+    "workType": "Remoto",
+    "level": "Júnior",
+    "localScore": 73,
+    "aiScore": 95,
+    "reason": "A vaga exige C#, ASP.NET e SQL Server, que são exatamente o core stack e a principal experiência profissional do candidato, além de ser 100% remota e no nível júnior/pleno.",
+    "risks": [
+      "A vaga menciona tecnologias complementares mais antigas como Webforms e AJAX, mas a base principal em C# e SQL Server compensa."
+    ],
+    "at": "2026-10-27T13:28:34.549Z",
+    "status": "sent",
+    "applyEmail": "kerolayne.fbarros@dimensa.com.br"
+  }
+]
